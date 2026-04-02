@@ -60,8 +60,10 @@ if mode == "🛠️ 문항별 개별 수정":
         opt3 = st.text_input("보기 3", value=curr_q['option3'])
         opt4 = st.text_input("보기 4", value=curr_q['option4'])
         opt5 = st.text_input("보기 5", value=curr_q['option5'])
-        new_ans = st.number_input("정답 번호 (1-5)", min_value=1, max_value=5, value=int(curr_q['answer']) if pd.isdigit(str(curr_q['answer'])) else 1)
+       q_answer = str(curr_q['answer'])
+default_ans = int(float(q_answer)) if q_answer.replace('.','',1).isdigit() else 1
 
+new_ans = st.number_input("정답 번호 (1-5)", min_value=1, max_value=5, value=default_ans)
     with col2:
         st.subheader("🖼️ 이미지 관리")
         # 현재 이미지 표시
