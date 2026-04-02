@@ -4,121 +4,147 @@ import random
 import os
 
 # 페이지 설정
-st.set_page_config(page_title="언어재활사 국시 CBT 관리자툴", layout="wide")
+st.set_page_config(page_title="언어재활사 국시 CBT 관리도구", layout="wide")
 
 # 이미지 저장 폴더 생성
 if not os.path.exists("images"):
     os.makedirs("images")
 
-# 1. 데이터 불러오기 함수 (CSV 기반으로 변경하여 웹 수정 지원)
+# 데이터 로드 함수 (CSV 우선, 없으면 엑셀 로드)
 def load_data():
     if os.path.exists("quiz_db.csv"):
-        df = pd.read_csv("quiz_db.csv")
+        return pd.read_csv("quiz_db.csv")
     else:
-        # 파일이 없으면 엑셀에서 가져오거나 빈 데이터 생성
         try:
             df = pd.read_excel("국시_3문항_테스트결과.xlsx")
+            # 필요한 컬럼이 없을 경우를 대비해 기본값 채우기
+            for col in ["case_box", "image_path", "is_image_option"]:
+                if col not in df.columns:
+                    df[col] = ""
             df.to_csv("quiz_db.csv", index=False)
+            return df
         except:
-            df = pd.DataFrame(columns=["번호", "question", "case_box", "image_path", "option1", "option2", "option3", "option4", "option5", "answer", "is_image_option"])
-    return df
+            # 완전 빈 데이터셋 생성
+            return pd.DataFrame(columns=["번호", "question", "case_box", "image_path", "option1", "option2", "option3", "option4", "option5", "answer"])
 
-# 사이드바 메뉴 (관리자 기능 추가)
-st.sidebar.title("MENU")
-mode = st.sidebar.radio("모드 선택", ["📖 시험 보기", "⚙️ 문제 및 이미지 관리"])
+# 사이드바 메뉴
+st.sidebar.title("🎮 메뉴 선택")
+mode = st.sidebar.radio("원하는 작업을 선택하세요", ["📝 시험 풀기", "🛠️ 문항별 개별 수정"])
+
+# 데이터 불러오기
+df = load_data()
 
 # ---------------------------------------------------------
-# 모드 1: 문제 및 이미지 관리 (수정 툴)
+# 모드 1: 문항별 개별 수정 (사용자 요청 핵심 기능)
 # ---------------------------------------------------------
-if mode == "⚙️ 문제 및 이미지 관리":
-    st.header("⚙️ 문제 은행 및 이미지 관리자")
+if mode == "🛠️ 문항별 개별 수정":
+    st.header("🛠️ 문항별 개별 수정 및 보완")
     
-    # 1. 웹에서 바로 표 수정하기
-    st.subheader("1. 문제 데이터 편집")
-    st.caption("아래 표의 칸을 더블클릭하여 내용을 수정하고 행을 추가할 수 있습니다.")
-    current_df = load_data()
-    edited_df = st.data_editor(current_df, num_rows="dynamic", use_container_width=True)
+    # 1. 수정할 문제 번호 선택
+    q_numbers = df.index.tolist()
+    selected_idx = st.selectbox("수정할 문제 번호를 선택하세요", q_numbers, format_func=lambda x: f"{x+1}번 문제")
     
-    if st.button("💾 모든 변경사항 저장"):
-        edited_df.to_csv("quiz_db.csv", index=False)
-        st.success("데이터베이스가 업데이트되었습니다!")
+    curr_q = df.iloc[selected_idx]
 
-    st.divider()
+    # 2. 편집 영역 (2컬럼 배치)
+    col1, col2 = st.columns([1, 1])
 
-    # 2. 이미지 파일 업로드
-    st.subheader("2. 시험용 이미지 업로드")
-    st.write("뇌 구조, 조영술 사진 등 문제에 들어갈 파일을 선택하세요.")
-    up_file = st.file_uploader("파일 선택", type=['png', 'jpg', 'jpeg'])
-    if up_file:
-        with open(os.path.join("images", up_file.name), "wb") as f:
-            f.write(up_file.getbuffer())
-        st.success(f"성공: {up_file.name} 이미지가 업로드되었습니다.")
-        st.info(f"이 이름을 표의 'image_path' 칸에 입력하세요.")
+    with col1:
+        st.subheader("📝 문제 및 내용 수정")
+        new_question = st.text_area("문제 내용", value=curr_q['question'], height=100)
+        new_case = st.text_area("사례 박스 (표나 긴 지문)", value=str(curr_q['case_box']) if pd.notna(curr_q['case_box']) else "", height=150)
+        
+        st.subheader("🔢 정답 및 보기 수정")
+        opt1 = st.text_input("보기 1", value=curr_q['option1'])
+        opt2 = st.text_input("보기 2", value=curr_q['option2'])
+        opt3 = st.text_input("보기 3", value=curr_q['option3'])
+        opt4 = st.text_input("보기 4", value=curr_q['option4'])
+        opt5 = st.text_input("보기 5", value=curr_q['option5'])
+        new_ans = st.number_input("정답 번호 (1-5)", min_value=1, max_value=5, value=int(curr_q['answer']) if pd.isdigit(str(curr_q['answer'])) else 1)
+
+    with col2:
+        st.subheader("🖼️ 이미지 관리")
+        # 현재 이미지 표시
+        if pd.notna(curr_q['image_path']) and str(curr_q['image_path']).strip() != "":
+            st.write(f"현재 파일: {curr_q['image_path']}")
+            img_path = os.path.join("images", str(curr_q['image_path']))
+            if os.path.exists(img_path):
+                st.image(img_path, width=300)
+        else:
+            st.warning("등록된 이미지가 없습니다.")
+
+        # 새 이미지 업로드
+        up_file = st.file_uploader("이 문항에 새 이미지 등록", type=['png', 'jpg', 'jpeg'], key=f"up_{selected_idx}")
+        new_img_name = curr_q['image_path']
+        if up_file:
+            new_img_name = up_file.name
+            with open(os.path.join("images", new_img_name), "wb") as f:
+                f.write(up_file.getbuffer())
+            st.success("새 이미지가 업로드되었습니다!")
+
+    # 3. 저장 버튼
+    if st.button("✅ 현재 문항 수정사항 저장", use_container_width=True):
+        df.at[selected_idx, 'question'] = new_question
+        df.at[selected_idx, 'case_box'] = new_case
+        df.at[selected_idx, 'option1'] = opt1
+        df.at[selected_idx, 'option2'] = opt2
+        df.at[selected_idx, 'option3'] = opt3
+        df.at[selected_idx, 'option4'] = opt4
+        df.at[selected_idx, 'option5'] = opt5
+        df.at[selected_idx, 'answer'] = new_ans
+        df.at[selected_idx, 'image_path'] = new_img_name
+        
+        df.to_csv("quiz_db.csv", index=False)
+        st.balloons()
+        st.success(f"{selected_idx+1}번 문제가 성공적으로 수정되었습니다!")
 
 # ---------------------------------------------------------
-# 모드 2: 시험 보기 (기존 CBT 기능)
+# 모드 2: 시험 풀기 (CBT)
 # ---------------------------------------------------------
 else:
-    all_data_df = load_data()
-    all_data = all_data_df.to_dict('records')
-
-    if not all_data:
-        st.warning("데이터가 없습니다. 관리 모드에서 문제를 추가해주세요.")
+    st.header("🎓 언어재활사 국가고시 CBT")
+    
+    quiz_data = df.to_dict('records')
+    
+    if not quiz_data:
+        st.error("수정 모드에서 문제를 먼저 등록해주세요!")
     else:
         if 'questions' not in st.session_state:
-            st.session_state.questions = random.sample(all_data, min(140, len(all_data)))
+            st.session_state.questions = random.sample(quiz_data, min(140, len(quiz_data)))
             st.session_state.current_idx = 0
             st.session_state.score = 0
-            st.session_state.user_answers = []
-
-        st.title("🎓 언어재활사 국가고시 CBT")
-        progress = st.session_state.current_idx / len(st.session_state.questions)
-        st.progress(progress)
 
         if st.session_state.current_idx < len(st.session_state.questions):
             q = st.session_state.questions[st.session_state.current_idx]
-            st.subheader(f"문제 {st.session_state.current_idx + 1} / {len(st.session_state.questions)}")
+            
+            st.subheader(f"문제 {st.session_state.current_idx + 1}")
+            st.progress(st.session_state.current_idx / len(st.session_state.questions))
 
-            # 사례 박스
-            if pd.notna(q.get('case_box')) and str(q.get('case_box')).strip() != "":
+            if pd.notna(q['case_box']) and str(q['case_box']).strip() != "":
                 st.info(q['case_box'])
 
-            # 이미지 표시 기능 (추가됨!)
-            if pd.notna(q.get('image_path')):
+            if pd.notna(q['image_path']) and str(q['image_path']).strip() != "":
                 img_path = os.path.join("images", str(q['image_path']))
                 if os.path.exists(img_path):
-                    st.image(img_path, caption="문제 참고 이미지")
+                    st.image(img_path)
 
-            st.write(f"**{q['question']}**")
-
-            options = [str(q['option1']), str(q['option2']), str(q['option3']), str(q['option4']), str(q['option5'])]
+            st.markdown(f"### {q['question']}")
             
-            # 보기 선택
-            user_choice = st.radio("정답을 선택하세요:", options, key=f"q_{st.session_state.current_idx}")
+            opts = [str(q['option1']), str(q['option2']), str(q['option3']), str(q['option4']), str(q['option5'])]
+            choice = st.radio("정답을 선택하세요", opts, key=f"play_{st.session_state.current_idx}")
 
             if st.button("다음 문제로"):
-                try:
-                    correct_num = int(''.join(filter(str.isdigit, str(q['answer']))))
-                except:
-                    correct_num = 0
+                # 정답 비교
+                correct_idx = int(q['answer'])
+                if choice == opts[correct_idx-1]:
+                    st.session_state.score += 1
                 
-                user_choice_idx = options.index(user_choice) + 1
-                is_correct = (user_choice_idx == correct_num)
-                if is_correct: st.session_state.score += 1
-
-                st.session_state.user_answers.append({
-                    'question': q['question'],
-                    'user_choice': user_choice,
-                    'correct_answer': options[correct_num - 1] if 0 < correct_num <= 5 else "확인 불가",
-                    'is_correct': is_correct
-                })
                 st.session_state.current_idx += 1
                 st.rerun()
         else:
-            # 결과 화면 (기존과 동일)
             st.balloons()
-            st.header("🎊 시험 종료!")
+            st.header("🎊 결과 발표")
             st.metric("최종 점수", f"{st.session_state.score} / {len(st.session_state.questions)}")
             if st.button("다시 풀기"):
-                st.session_state.clear()
+                del st.session_state['questions']
                 st.rerun()
