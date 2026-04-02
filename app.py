@@ -8,7 +8,7 @@ st.set_page_config(page_title="언어재활사 국시 CBT", layout="centered")
 # 1. 데이터 불러오기
 @st.cache_data
 def load_data():
-    df = pd.read_excel("언어재활_최종_문제은행.xlsx") # 파일명 확인
+    df = pd.read_excel("국시_3문항_테스트결과.xlsx") # 파일명 확인
     return df.to_dict('records')
 
 if 'questions' not in st.session_state:
