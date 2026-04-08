@@ -17,18 +17,20 @@ def load_data():
         "img", "opt_img1", "opt_img2", "opt_img3", "opt_img4", "opt_img5",
         "concept_title", "concept_point", "concept_mindmap", "concept_video"
     ]
+    
     if os.path.exists(DB_FILE):
-        df = pd.read_csv(DB_FILE)
+        # 🌟 keep_default_na=False: 빈 칸을 'nan'이라는 글자로 읽어오는 것을 방지 (이미지 오류 해결)
+        df = pd.read_csv(DB_FILE, keep_default_na=False)
         for col in required_cols:
             if col not in df.columns: df[col] = ""
-        return df
+        # 🌟 astype(object): 모든 데이터를 유연한 타입으로 변환 (TypeError 방지)
+        return df.astype(object)
     else:
-        # 데이터가 없을 경우 140번까지 기본 틀 자동 생성
         initial_data = [{"id": i, "session": "1" if i<=70 else "2"} for i in range(1, 141)]
         df = pd.DataFrame(initial_data)
         for col in required_cols:
             if col not in df.columns: df[col] = ""
-        return df
+        return df.astype(object)
 
 if 'df' not in st.session_state:
     st.session_state.df = load_data()
