@@ -2,14 +2,19 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import base64
 
 # 1. 페이지 설정
 st.set_page_config(page_title="언어재활사 통합 CBT 관리시스템", layout="wide")
 
 DB_FILE = "quiz_db.csv"
 HTML_FILE = "자동화.html"
+IMAGE_DIR = "images" # 이미지 저장 폴더
 
-# 데이터 로드 및 필수 컬럼(표 파싱, 오답분석용) 보장 함수
+if not os.path.exists(IMAGE_DIR):
+    os.makedirs(IMAGE_DIR)
+
+# 데이터 로드 (TypeError 및 nan 방지)
 def load_data():
     required_cols = [
         "id", "session", "subject", "question", "case_box", "answer", 
@@ -17,150 +22,117 @@ def load_data():
         "img", "opt_img1", "opt_img2", "opt_img3", "opt_img4", "opt_img5",
         "concept_title", "concept_point", "concept_mindmap", "concept_video"
     ]
-    
     if os.path.exists(DB_FILE):
-        # 🌟 keep_default_na=False: 빈 칸을 'nan'이라는 글자로 읽어오는 것을 방지 (이미지 오류 해결)
-        df = pd.read_csv(DB_FILE, keep_default_na=False)
+        df = pd.read_csv(DB_FILE, keep_default_na=False).astype(object)
         for col in required_cols:
             if col not in df.columns: df[col] = ""
-        # 🌟 astype(object): 모든 데이터를 유연한 타입으로 변환 (TypeError 방지)
-        return df.astype(object)
+        return df
     else:
         initial_data = [{"id": i, "session": "1" if i<=70 else "2"} for i in range(1, 141)]
-        df = pd.DataFrame(initial_data)
+        df = pd.DataFrame(initial_data).astype(object)
         for col in required_cols:
             if col not in df.columns: df[col] = ""
-        return df.astype(object)
+        return df
 
 if 'df' not in st.session_state:
     st.session_state.df = load_data()
 
-# 사이드바 메뉴
-mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작 (통합 인터페이스)", "🛠️ 140문항 직접 수정/관리"])
+# --- 유틸리티 함수: nan 텍스트 제거 ---
+def clean_val(x):
+    s = str(x).strip()
+    if s.lower() in ['nan', 'none', '']: return ""
+    return s
+
+mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리"])
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작 (자동화.html 엔진 사용)
+# 모드 1: 시험 시작
 # ---------------------------------------------------------
-if mode == "📝 시험 시작 (통합 인터페이스)":
+if mode == "📝 시험 시작":
     df = st.session_state.df
     s1_list, s2_list, concept_db = [], [], {}
 
     for _, row in df.iterrows():
         try:
-            if pd.isna(row['id']) or str(row['id']).strip() == "": continue
             q_id = int(float(row['id']))
-            
-            # 정답값 안전하게 정수로 변환
-            raw_ans = str(row['answer']).strip()
-            safe_ans = int(float(raw_ans)) if raw_ans and raw_ans.lower() != 'nan' else 1
-            
-            # 자동화.html의 JS 엔진이 요구하는 객체 구조로 변환
             q_obj = {
                 "id": q_id,
-                "subject": str(row.get('subject', '미지정')),
-                "text": str(row.get('question', '')),
-                "passage": str(row.get('case_box', '')), # 표(|) 파싱 보존
-                "answer": safe_ans,
-                "img": str(row.get('img', '')),
+                "subject": clean_val(row.get('subject', '')),
+                "text": clean_val(row.get('question', '')),
+                "passage": clean_val(row.get('case_box', '')),
+                "answer": int(float(clean_val(row.get('answer', 1)) or 1)),
+                "img": clean_val(row.get('img', '')),
                 "options": [
-                    {"text": str(row.get('option1', '')), "img": str(row.get('opt_img1', ''))},
-                    {"text": str(row.get('option2', '')), "img": str(row.get('opt_img2', ''))},
-                    {"text": str(row.get('option3', '')), "img": str(row.get('opt_img3', ''))},
-                    {"text": str(row.get('option4', '')), "img": str(row.get('opt_img4', ''))},
-                    {"text": str(row.get('option5', '')), "img": str(row.get('opt_img5', ''))}
+                    {"text": clean_val(row.get(f'option{i}', '')), "img": clean_val(row.get(f'opt_img{i}', ''))} for i in range(1, 6)
                 ]
             }
-            
             if str(row.get('session')) == "2": s2_list.append(q_obj)
             else: s1_list.append(q_obj)
 
-            # 오답 분석용 CONCEPT_DATABASE 생성 (Q_001 형식)
             f_id = f"Q_{q_id:03d}"
             concept_db[f_id] = {
-                "title": str(row.get('concept_title', '')),
-                "point": str(row.get('concept_point', '')),
-                "mindmap": str(row.get('concept_mindmap', '')),
-                "video": str(row.get('concept_video', ''))
+                "title": clean_val(row.get('concept_title', '')),
+                "point": clean_val(row.get('concept_point', '')),
+                "mindmap": clean_val(row.get('concept_mindmap', '')),
+                "video": clean_val(row.get('concept_video', ''))
             }
         except: continue
 
-    # HTML 템플릿 읽기 및 데이터 주입
     if os.path.exists(HTML_FILE):
         with open(HTML_FILE, "r", encoding="utf-8") as f:
             base_html = f.read()
-        
-        # 외부 JS 호출 태그를 파이썬의 최신 JSON 데이터로 치환
-        final_html = base_html.replace(
-            '<script src="questions1.js"></script>', 
-            f'<script>window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};</script>'
-        ).replace(
-            '<script src="questions2.js"></script>', 
-            f'<script>window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};</script>'
-        ).replace(
-            '<script src="database.js"></script>', 
-            f'<script>window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};</script>'
-        )
-        
-        import streamlit.components.v1 as components
-        components.html(final_html, height=900, scrolling=False)
+        final_html = base_html.replace('<script src="questions1.js"></script>', f'<script>window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};</script>')\
+                              .replace('<script src="questions2.js"></script>', f'<script>window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};</script>')\
+                              .replace('<script src="database.js"></script>', f'<script>window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};</script>')
+        st.components.v1.html(final_html, height=900, scrolling=False)
     else:
-        st.error(f"'{HTML_FILE}' 파일이 같은 폴더에 없습니다.")
+        st.error("자동화.html 파일을 찾을 수 없습니다.")
 
 # ---------------------------------------------------------
-# 모드 2: 140문항 직접 수정/관리
+# 모드 2: 문항 관리 (이미지 업로드 기능 포함)
 # ---------------------------------------------------------
 else:
-    st.header("🛠️ 문항 및 오답분석 DB 관리")
-    
-    # 데이터프레임의 모든 컬럼을 객체(문자열 허용) 타입으로 변환하여 TypeError 방지
+    st.header("🛠️ 문항 및 이미지 업로드 관리")
     df = st.session_state.df.astype(object)
+    q_idx = st.selectbox("수정할 문항 선택", df.index, format_func=lambda x: f"[{df.loc[x, 'id']}번] {str(df.loc[x, 'question'])[:30]}...")
 
-    # 수정할 문제 선택
-    q_idx = st.selectbox("수정할 문항 선택", df.index, 
-                         format_func=lambda x: f"[{df.loc[x, 'id']}번] {str(df.loc[x, 'question'])[:30]}...")
-
-    tab1, tab2, tab3 = st.tabs(["1. 문제 및 사례(표)", "2. 보기 및 이미지 옵션", "3. 오답 분석 정보"])
+    tab1, tab2, tab3 = st.tabs(["1. 문제 정보", "2. 보기/이미지 업로드", "3. 오답 분석"])
 
     with tab1:
-        c1, c2 = st.columns([1, 4])
+        df.at[q_idx, 'question'] = st.text_area("문제 지문", value=clean_val(df.loc[q_idx, 'question']), key=f"q_{q_idx}")
+        df.at[q_idx, 'case_box'] = st.text_area("사례 박스", value=clean_val(df.loc[q_idx, 'case_box']), key=f"c_{q_idx}")
         
-        # 교시 설정 (문자열로 처리)
-        current_sess = str(df.loc[q_idx, 'session'])
-        sess_idx = 1 if current_sess == "2" else 0
-        new_sess = c1.selectbox("교시", ["1", "2"], index=sess_idx, key=f"sess_select_{q_idx}")
-        df.at[q_idx, 'session'] = str(new_sess)
+        # 메인 이미지 업로드
+        st.write("🖼️ **문제 메인 이미지**")
+        main_img_file = st.file_uploader("이미지 파일 선택", type=['png', 'jpg', 'jpeg'], key=f"m_up_{q_idx}")
+        if main_img_file:
+            with open(os.path.join(IMAGE_DIR, main_img_file.name), "wb") as f:
+                f.write(main_img_file.getbuffer())
+            df.at[q_idx, 'img'] = f"images/{main_img_file.name}:C" # 자동 중앙정렬 옵션 포함
+            st.success(f"업로드 완료: {main_img_file.name}")
         
-        # 과목명 및 지문
-        df.at[q_idx, 'subject'] = c2.text_input("과목명", value=str(df.loc[q_idx, 'subject']), key=f"sub_{q_idx}")
-        df.at[q_idx, 'question'] = st.text_area("문제 지문", value=str(df.loc[q_idx, 'question']), height=100, key=f"q_text_{q_idx}")
-        df.at[q_idx, 'case_box'] = st.text_area("사례 박스 (표 작성 시 | 사용)", value=str(df.loc[q_idx, 'case_box']), height=200, key=f"case_text_{q_idx}")
-        df.at[q_idx, 'img'] = st.text_input("메인 이미지 (파일명:옵션)", value=str(df.loc[q_idx, 'img']), placeholder="pic1.png:C", key=f"main_img_{q_idx}")
+        # 이미지 삭제 버튼
+        if st.button("❌ 메인 이미지 삭제", key=f"m_del_{q_idx}"):
+            df.at[q_idx, 'img'] = ""
+            st.rerun()
 
     with tab2:
-        # 정답 처리 (에러 방지를 위해 변수에 먼저 담기)
-        try:
-            current_ans = int(float(df.loc[q_idx, 'answer'] or 1))
-        except:
-            current_ans = 1
-            
-        new_ans = st.number_input("정답 번호 (1-5)", 1, 5, value=current_ans, key=f"ans_num_{q_idx}")
-        df.at[q_idx, 'answer'] = str(new_ans)
-
+        df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, value=int(float(clean_val(df.loc[q_idx, 'answer']) or 1)))
         for i in range(1, 6):
-            st.markdown(f"**보기 {i}**")
-            col_t, col_i = st.columns([2, 1])
-            df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i} 텍스트", value=str(df.loc[q_idx, f'option{i}']), key=f"opt_t{i}_{q_idx}")
-            df.at[q_idx, f'opt_img{i}'] = col_i.text_input(f"보기 {i} 이미지", value=str(df.loc[q_idx, f'opt_img{i}']), key=f"opt_i{i}_{q_idx}")
+            st.markdown(f"--- **보기 {i}** ---")
+            df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i} 텍스트", value=clean_val(df.loc[q_idx, f'option{i}']), key=f"opt_{i}_{q_idx}")
+            opt_file = st.file_uploader(f"보기 {i} 이미지 업로드", type=['png', 'jpg', 'jpeg'], key=f"o_up_{i}_{q_idx}")
+            if opt_file:
+                with open(os.path.join(IMAGE_DIR, opt_file.name), "wb") as f:
+                    f.write(opt_file.getbuffer())
+                df.at[q_idx, f'opt_img{i}'] = f"images/{opt_file.name}"
+                st.info(f"업로드됨: {opt_file.name}")
+            if st.button(f"보기 {i} 이미지 삭제", key=f"o_del_{i}_{q_idx}"):
+                df.at[q_idx, f'opt_img{i}'] = ""
+                st.rerun()
 
-    with tab3:
-        st.info("시험 제출 후 표시될 오답 분석 데이터입니다.")
-        df.at[q_idx, 'concept_title'] = st.text_input("개념 타이틀", value=str(df.loc[q_idx, 'concept_title']), key=f"c_title_{q_idx}")
-        df.at[q_idx, 'concept_point'] = st.text_area("출제 포인트", value=str(df.loc[q_idx, 'concept_point']), key=f"c_point_{q_idx}")
-        df.at[q_idx, 'concept_mindmap'] = st.text_input("마인드맵(이미지경로 또는 태그)", value=str(df.loc[q_idx, 'concept_mindmap']), key=f"c_mind_{q_idx}")
-        df.at[q_idx, 'concept_video'] = st.text_input("영상(유튜브 링크/MP4)", value=str(df.loc[q_idx, 'concept_video']), key=f"c_vid_{q_idx}")
-
-    if st.button("💾 현재 문항 저장하기", use_container_width=True):
+    if st.button("💾 이 문항 최종 저장하기", use_container_width=True):
         st.session_state.df = df
         st.session_state.df.to_csv(DB_FILE, index=False)
-        st.success(f"{df.loc[q_idx, 'id']}번 문항 저장 완료!")
+        st.success("데이터베이스에 저장되었습니다!")
         st.rerun()
