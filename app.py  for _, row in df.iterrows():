@@ -7,25 +7,26 @@ import os
 st.set_page_config(page_title="언어재활사 통합 CBT 시스템", layout="wide")
 
 DB_FILE = "quiz_db.csv"
-HTML_FILE = "자동화.html"
+HTML_FILE = "자동화.html"  # 파일명이 정확한지 확인 필수
 
-# 데이터 로드 함수
+# 데이터 로드 및 필수 컬럼 자동 생성 함수
 def load_data():
+    required_cols = [
+        "id", "session", "subject", "question", "case_box", "answer", 
+        "option1", "option2", "option3", "option4", "option5",
+        "img", "opt_img1", "opt_img2", "opt_img3", "opt_img4", "opt_img5",
+        "concept_title", "concept_point", "concept_mindmap", "concept_video"
+    ]
     if os.path.exists(DB_FILE):
-        df = pd.read_csv(DB_FILE)
-        # 필수 컬럼 보장
-        cols = [
-            "id", "session", "subject", "question", "case_box", "answer", 
-            "option1", "option2", "option3", "option4", "option5",
-            "img", "opt_img1", "opt_img2", "opt_img3", "opt_img4", "opt_img5",
-            "concept_title", "concept_point", "concept_mindmap", "concept_video"
-        ]
-        for col in cols:
-            if col not in df.columns: df[col] = ""
-        return df
+        try:
+            df = pd.read_csv(DB_FILE)
+            for col in required_cols:
+                if col not in df.columns: df[col] = ""
+            return df
+        except:
+            return pd.DataFrame(columns=required_cols)
     else:
-        # 데이터가 없을 경우 기본 틀 생성
-        return pd.DataFrame(columns=["id", "session", "subject", "question", "case_box", "answer", "option1", "option2", "option3", "option4", "option5"])
+        return pd.DataFrame(columns=required_cols)
 
 if 'df' not in st.session_state:
     st.session_state.df = load_data()
@@ -33,24 +34,27 @@ if 'df' not in st.session_state:
 mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 데이터 관리"])
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작 (통합 시스템)
+# 모드 1: 시험 시작 (통합 시스템 적용)
 # ---------------------------------------------------------
 if mode == "📝 시험 시작":
     df = st.session_state.df
     s1_list, s2_list, concept_db = [], [], {}
 
-    # 데이터 정제 및 JSON 변환
+    # 데이터 변환 로직 (오류 방지용 try-except 강화)
     for _, row in df.iterrows():
         try:
-            q_id = int(row['id'])
-            # 정답값 안전하게 처리
+            # ID가 없으면 건너뜀
+            if pd.isna(row['id']) or row['id'] == "": continue
+            q_id = int(float(row['id']))
+            
+            # 정답값 정수 변환 (비어있으면 1)
             raw_ans = str(row['answer']).strip()
-            safe_ans = int(float(raw_ans)) if raw_ans and raw_ans != 'nan' else 1
+            safe_ans = int(float(raw_ans)) if raw_ans and raw_ans.lower() != 'nan' else 1
             
             q_obj = {
                 "id": q_id,
                 "subject": str(row.get('subject', '')),
-                "text": str(row.get('question', '')),
+                "text": str(row.get('question', '문제 내용 없음')),
                 "passage": str(row.get('case_box', '')) if pd.notna(row.get('case_box')) else "",
                 "answer": safe_ans,
                 "img": str(row.get('img', '')),
@@ -63,10 +67,12 @@ if mode == "📝 시험 시작":
                 ]
             }
             
-            if str(row.get('session')) == "2": s2_list.append(q_obj)
-            else: s1_list.append(q_obj)
+            if str(row.get('session')) == "2": 
+                s2_list.append(q_obj)
+            else: 
+                s1_list.append(q_obj)
 
-            # 오답 DB 키 생성 (Q_001 형식)
+            # 오답 DB 키 생성 (Q_001 형식 - 파이썬 문법 준수)
             f_id = f"Q_{q_id:03d}"
             concept_db[f_id] = {
                 "title": str(row.get('concept_title', '')),
@@ -79,32 +85,38 @@ if mode == "📝 시험 시작":
 
     # HTML 파일 읽기 및 데이터 주입
     if os.path.exists(HTML_FILE):
-        with open(HTML_FILE, "r", encoding="utf-8") as f:
-            base_html = f.read()
-        
-        # 스크립트 태그 치환 (데이터 주입)
-        final_html = base_html.replace(
-            '<script src="questions1.js"></script>', 
-            f'<script>window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};</script>'
-        ).replace(
-            '<script src="questions2.js"></script>', 
-            f'<script>window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};</script>'
-        ).replace(
-            '<script src="database.js"></script>', 
-            f'<script>window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};</script>'
-        )
-        
-        import streamlit.components.v1 as components
-        components.html(final_html, height=900, scrolling=False)
+        try:
+            with open(HTML_FILE, "r", encoding="utf-8") as f:
+                base_html = f.read()
+            
+            # JSON 데이터를 안전하게 HTML 스크립트 위치에 치환
+            final_html = base_html.replace(
+                '<script src="questions1.js"></script>', 
+                f'<script>window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};</script>'
+            ).replace(
+                '<script src="questions2.js"></script>', 
+                f'<script>window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};</script>'
+            ).replace(
+                '<script src="database.js"></script>', 
+                f'<script>window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};</script>'
+            )
+            
+            import streamlit.components.v1 as components
+            components.html(final_html, height=900, scrolling=False)
+        except Exception as e:
+            st.error(f"HTML 파일을 처리하는 중 오류가 발생했습니다: {e}")
     else:
-        st.error(f"'{HTML_FILE}' 파일을 찾을 수 없습니다. 경로를 확인해주세요.")
+        st.error(f"'{HTML_FILE}' 파일을 찾을 수 없습니다. 파일 이름을 확인해주세요.")
 
 # ---------------------------------------------------------
-# 모드 2: 데이터 관리 (간략화된 예시)
+# 모드 2: 데이터 관리
 # ---------------------------------------------------------
 else:
-    st.header("🛠️ 데이터 관리")
-    st.session_state.df = st.data_editor(st.session_state.df, num_rows="dynamic")
-    if st.button("💾 데이터 저장"):
+    st.header("🛠️ 데이터 관리 도구")
+    # 데이터를 표 형식으로 직접 수정 가능하게 함
+    edited_df = st.data_editor(st.session_state.df, num_rows="dynamic", use_container_width=True)
+    
+    if st.button("💾 모든 데이터 저장", use_container_width=True):
+        st.session_state.df = edited_df
         st.session_state.df.to_csv(DB_FILE, index=False)
-        st.success("저장 완료!")
+        st.success("quiz_db.csv 파일에 저장되었습니다!")
