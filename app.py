@@ -109,7 +109,9 @@ if mode == "📝 시험 시작 (통합 인터페이스)":
 # ---------------------------------------------------------
 else:
     st.header("🛠️ 문항 및 오답분석 DB 관리")
-    df = st.session_state.df
+    
+    # 데이터프레임의 모든 컬럼을 객체(문자열 허용) 타입으로 변환하여 TypeError 방지
+    df = st.session_state.df.astype(object)
 
     # 수정할 문제 선택
     q_idx = st.selectbox("수정할 문항 선택", df.index, 
@@ -119,40 +121,44 @@ else:
 
     with tab1:
         c1, c2 = st.columns([1, 4])
-        df.at[q_idx, 'session'] = c1.selectbox("교시", ["1", "2"], index=0 if str(df.loc[q_idx, 'session'])=="1" else 1)
-        df.at[q_idx, 'subject'] = c2.text_input("과목명", value=df.loc[q_idx, 'subject'])
-        df.at[q_idx, 'question'] = st.text_area("문제 지문", value=df.loc[q_idx, 'question'], height=100)
-        df.at[q_idx, 'case_box'] = st.text_area("사례 박스 (표 작성 시 | 사용)", value=df.loc[q_idx, 'case_box'], height=200, help="예: |제목|제목|\n|내용|내용|")
-        df.at[q_idx, 'img'] = st.text_input("메인 이미지 (파일명:옵션)", value=df.loc[q_idx, 'img'], placeholder="pic1.png:C")
+        
+        # 교시 설정 (문자열로 처리)
+        current_sess = str(df.loc[q_idx, 'session'])
+        sess_idx = 1 if current_sess == "2" else 0
+        new_sess = c1.selectbox("교시", ["1", "2"], index=sess_idx, key=f"sess_select_{q_idx}")
+        df.at[q_idx, 'session'] = str(new_sess)
+        
+        # 과목명 및 지문
+        df.at[q_idx, 'subject'] = c2.text_input("과목명", value=str(df.loc[q_idx, 'subject']), key=f"sub_{q_idx}")
+        df.at[q_idx, 'question'] = st.text_area("문제 지문", value=str(df.loc[q_idx, 'question']), height=100, key=f"q_text_{q_idx}")
+        df.at[q_idx, 'case_box'] = st.text_area("사례 박스 (표 작성 시 | 사용)", value=str(df.loc[q_idx, 'case_box']), height=200, key=f"case_text_{q_idx}")
+        df.at[q_idx, 'img'] = st.text_input("메인 이미지 (파일명:옵션)", value=str(df.loc[q_idx, 'img']), placeholder="pic1.png:C", key=f"main_img_{q_idx}")
 
     with tab2:
-        # 1. 화면에 보여줄 숫자 입력창 (변수에 먼저 담습니다)
+        # 정답 처리 (에러 방지를 위해 변수에 먼저 담기)
         try:
-            current_ans_val = int(float(df.loc[q_idx, 'answer'] or 1))
+            current_ans = int(float(df.loc[q_idx, 'answer'] or 1))
         except:
-            current_ans_val = 1
+            current_ans = 1
             
-        new_ans_val = st.number_input("정답 번호 (1-5)", 1, 5, value=current_ans_val, key=f"ans_input_{q_idx}")
-        
-        # 2. 데이터프레임에 저장할 때는 문자열로 변환하여 에러 방지
-        # df.at 대신 컬럼 전체의 타입을 object로 미리 바꿔주는 것이 더 안전합니다.
-        df['answer'] = df['answer'].astype(object)
-        df.at[q_idx, 'answer'] = str(new_ans_val)
+        new_ans = st.number_input("정답 번호 (1-5)", 1, 5, value=current_ans, key=f"ans_num_{q_idx}")
+        df.at[q_idx, 'answer'] = str(new_ans)
 
         for i in range(1, 6):
             st.markdown(f"**보기 {i}**")
             col_t, col_i = st.columns([2, 1])
-            df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i} 텍스트", value=str(df.loc[q_idx, f'option{i}']), key=f"t{i}_{q_idx}")
-            df.at[q_idx, f'opt_img{i}'] = col_i.text_input(f"보기 {i} 이미지", value=str(df.loc[q_idx, f'opt_img{i}']), key=f"i{i}_{q_idx}")
+            df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i} 텍스트", value=str(df.loc[q_idx, f'option{i}']), key=f"opt_t{i}_{q_idx}")
+            df.at[q_idx, f'opt_img{i}'] = col_i.text_input(f"보기 {i} 이미지", value=str(df.loc[q_idx, f'opt_img{i}']), key=f"opt_i{i}_{q_idx}")
 
     with tab3:
         st.info("시험 제출 후 표시될 오답 분석 데이터입니다.")
-        df.at[q_idx, 'concept_title'] = st.text_input("개념 타이틀", value=df.loc[q_idx, 'concept_title'])
-        df.at[q_idx, 'concept_point'] = st.text_area("출제 포인트", value=df.loc[q_idx, 'concept_point'])
-        df.at[q_idx, 'concept_mindmap'] = st.text_input("마인드맵(이미지경로 또는 태그)", value=df.loc[q_idx, 'concept_mindmap'])
-        df.at[q_idx, 'concept_video'] = st.text_input("영상(유튜브 링크/MP4)", value=df.loc[q_idx, 'concept_video'])
+        df.at[q_idx, 'concept_title'] = st.text_input("개념 타이틀", value=str(df.loc[q_idx, 'concept_title']), key=f"c_title_{q_idx}")
+        df.at[q_idx, 'concept_point'] = st.text_area("출제 포인트", value=str(df.loc[q_idx, 'concept_point']), key=f"c_point_{q_idx}")
+        df.at[q_idx, 'concept_mindmap'] = st.text_input("마인드맵(이미지경로 또는 태그)", value=str(df.loc[q_idx, 'concept_mindmap']), key=f"c_mind_{q_idx}")
+        df.at[q_idx, 'concept_video'] = st.text_input("영상(유튜브 링크/MP4)", value=str(df.loc[q_idx, 'concept_video']), key=f"c_vid_{q_idx}")
 
     if st.button("💾 현재 문항 저장하기", use_container_width=True):
-        df.to_csv(DB_FILE, index=False)
         st.session_state.df = df
+        st.session_state.df.to_csv(DB_FILE, index=False)
         st.success(f"{df.loc[q_idx, 'id']}번 문항 저장 완료!")
+        st.rerun()
