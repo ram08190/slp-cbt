@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>언어재활사 1급 CBT - 통합형 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap');
+        .floating-tool, #exam-overlay, #image-modal, #exam-result-modal, #wrong-answer-modal { display: none; } 
+        body { font-family: 'Pretendard', sans-serif; background-color: #ffffff; overflow: hidden; color: #1e293b; }
+        .passage-box-container { margin-bottom: 1.25rem; display: inline-block; min-width: fit-content; border: 2px solid black; background-color: white; border-radius: 4px; padding: 1.5rem 2.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .table-passage-container { margin-bottom: 1.25rem; padding: 0; background: transparent; }
+        .fraction { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; font-size: 0.9em; margin: 0 4px; line-height: 1; }
+        .fraction .num { border-bottom: 1.5px solid #000; padding: 0 2px 1px 2px; }
+        .fraction .den { padding: 1px 2px 0 2px; }
+        .highlight { background-color: #fef08a; border-radius: 2px; }
+        .table-container { width: 100%; display: flex; justify-content: flex-start; margin: 15px 0; }
+        table { border-collapse: collapse !important; border: 1.5px solid #000 !important; background: white; margin: 15px 0; width: auto !important; }
+        td { border: 1px solid #000 !important; padding: 10px 15px !important; text-align: center; font-weight: 500; }
+        .opt-img-box, .passage-img-box { display: inline-block !important; margin: 10px 0; padding: 0 !important; border: none !important; background: none !important; }
+        .opt-img-box img, .passage-img-box img { display: block; max-width: 100%; height: auto; }
+        .img-caption { display: block; width: 100%; text-align: center; font-size: 13px; font-weight: bold; color: #64748b; margin-top: 6px; }
+        .options-grid { display: grid; gap: 0.75rem; width: 100%; margin-top: 1.5rem; }
+        .options-grid.has-images { grid-template-columns: repeat(2, 1fr); }
+        .opt-item { cursor: pointer; padding: 6px; border-radius: 8px; transition: all 0.2s; }
+        .opt-num { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; flex-shrink: 0; margin-top: 2px; }
+    </style>
+</head>
+<body class="flex flex-col h-screen bg-white">
+    <header class="bg-[#002855] text-white h-16 flex items-center justify-between px-6 shrink-0 z-50 shadow-md">
+        <div class="flex items-center gap-6">
+            <h1 class="text-xl font-bold whitespace-nowrap">언어재활사 CBT</h1>
+            <div class="flex bg-white/10 rounded-lg p-1 border border-white/20">
+                <button onclick="switchSession(1)" id="sess-btn-1" class="px-3 py-1 text-xs font-bold rounded bg-white text-[#002855]">1교시</button>
+                <button onclick="switchSession(2)" id="sess-btn-2" class="px-3 py-1 text-xs font-bold rounded ml-1 text-white">2교시</button>
+            </div>
+            <div class="flex bg-white/10 rounded-lg p-1 border border-white/20 gap-1 ml-2">
+                <button onclick="setView(1)" id="v-btn-1" class="w-10 h-8 flex items-center justify-center bg-white/30 rounded font-bold text-white text-lg">□</button>
+                <button onclick="setView(2)" id="v-btn-2" class="px-2 h-8 rounded font-bold text-xs whitespace-nowrap text-white">□|□</button>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div id="timer" class="font-mono text-xl font-bold text-emerald-400 tabular-nums">75:00</div>
+            <button onclick="toggleHL()" id="hl-btn" class="bg-slate-700 px-3 py-1.5 rounded text-xs font-bold border border-white/10">🖍 형광펜 OFF</button>
+            <button onclick="submitExam()" class="bg-red-600 px-4 py-1.5 rounded text-sm font-bold shadow hover:bg-red-700 text-white font-black">제출</button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        <div id="question-area" class="flex-1 bg-white overflow-hidden" onmouseup="doHighlight()"></div>
+        <aside class="w-72 bg-slate-50 border-l border-slate-200 flex flex-col z-10">
+            <div id="omr-grid" class="p-4 grid grid-cols-5 gap-2 overflow-y-auto content-start flex-1"></div>
+        </aside>
+    </main>
+
+    <footer class="h-16 bg-white border-t border-slate-200 flex items-center justify-center gap-16 shrink-0 z-10">
+        <button onclick="prev()" class="px-10 py-2.5 bg-slate-100 rounded-xl font-bold hover:bg-slate-200 transition">◀ 이전</button>
+        <div class="font-bold text-lg tabular-nums"><span id="curr-idx" class="text-blue-900">1</span> / <span id="total-idx">0</span></div>
+        <button onclick="next()" class="px-10 py-2.5 bg-[#002855] text-white rounded-xl font-bold hover:bg-[#003a7a] shadow">다음 ▶</button>
+    </footer>
+
+    <div id="image-modal" onclick="closeImage()" class="fixed inset-0 bg-black/90 z-[100] hidden items-center justify-center p-4">
+        <img id="modal-img" src="" class="max-w-full max-h-[85vh] rounded-lg shadow-2xl">
+    </div>
+
+    <div id="exam-result-modal" class="fixed inset-0 bg-black/80 z-[200] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-md rounded-3xl overflow-hidden shadow-2xl p-8 text-center">
+            <div id="result-icon" class="text-6xl mb-4 text-left">⚠️</div>
+            <h2 class="text-2xl font-bold mb-1 text-left">시험 제출 완료</h2>
+            <div id="result-report" class="bg-slate-50 rounded-2xl p-6 font-mono text-left text-sm border border-slate-100 my-6"></div>
+            <button onclick="document.getElementById('exam-result-modal').style.display='none'" class="w-full py-4 bg-[#002855] text-white rounded-xl font-bold">시험지 검토하기</button>
+        </div>
+    </div>
+
+    <div id="wrong-answer-modal" class="fixed inset-0 bg-black/80 z-[300] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-y-auto p-8 relative">
+            <button onclick="document.getElementById('wrong-answer-modal').style.display='none'" class="absolute top-4 right-4 text-3xl font-bold text-slate-400 hover:text-black">×</button>
+            <h2 id="modal-title" class="text-2xl font-bold text-blue-900 mb-4 border-b pb-2 text-left"></h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div><h3 class="font-bold mb-3 text-blue-700 text-left">💡 핵심 마인드맵</h3><div id="modal-mindmap" class="border p-4 bg-slate-50 rounded-lg flex items-center justify-center min-h-[150px]"></div></div>
+                <div><h3 class="font-bold mb-3 text-red-700 text-left">🎥 관련 임상 영상</h3><div id="modal-video" class="aspect-video bg-black rounded-lg"></div></div>
+            </div>
+            <div class="mt-8 p-6 bg-blue-50 rounded-xl border border-blue-100 text-left">
+                <h3 class="font-bold text-blue-800 mb-2">📌 출제 포인트</h3>
+                <p id="modal-point" class="text-lg text-slate-700"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="questions1.js"></script>
+    <script src="questions2.js"></script>
+    <script src="database.js"></script>
+
+    <script>
+        let currentSession = 1, currIdx = 0, viewMode = 1, userAns = {1:{},2:{}}, time = 75 * 60, isHL = false, isReviewMode = false;
+
+        function getActiveQs() { return currentSession === 1 ? (window.QUESTIONS_S1 || []) : (window.QUESTIONS_S2 || []); }
+
+        function processFraction(text) {
+            if (typeof text !== 'string' || !text.includes('/')) return text;
+            return text.replace(/(\d+)\/(\d+)(?=\s*[×xX*]|$)/g, function(match, num, den) {
+                return `<span class="fraction"><span class="num">${num}</span><span class="den">${den}</span></span>`;
+            });
+        }
+
+        // 🌟 [핵심 함수] 모든 이미지의 사이즈와 정렬 옵션을 공통으로 처리하는 엔진
+        function processImageConfig(src) {
+    if (!src) return "";
+    let cleanSrc = src;
+    let imgStyle = "max-height:400px; width:auto;"; 
+    let alignStyle = "text-align: left;"; // 🌟 기본값을 왼쪽 정렬로 고정!
+
+    if (src.includes(':')) {
+        const parts = src.split(':');
+        cleanSrc = parts[0].trim();
+        
+        parts.slice(1).forEach(opt => {
+            const p = opt.toUpperCase().trim();
+            // 1. 사이즈 체크
+            if (p.includes('X')) {
+                const dims = p.match(/(\d+)X(\d+)/i);
+                if (dims) imgStyle = `width:${dims[0]}px; height:${dims[1]}px; object-fit:contain;`;
+            } else if (p.match(/^\d+$/)) {
+                imgStyle = `width:${p}px; height:auto;`;
+            }
+            // 2. 중앙 정렬 체크 (오직 :C가 있을 때만 작동)
+            if (p === 'C') {
+                alignStyle = "display: block; margin-left: auto; margin-right: auto; text-align: center; width: 100%;";
+            }
+        });
+    }
+    // 🌟 alignStyle을 바깥 div에 적용하여 정렬을 제어합니다.
+    return `<div style="${alignStyle}"><div class="passage-img-box inline-block"><img src="${cleanSrc}" style="${imgStyle}" class="cursor-pointer" onclick="openImage('${cleanSrc}')"></div></div>`;
+}
+        function parseTable(passage, imgs = []) {
+    if (!passage) return "";
+    let processed = passage;
+    
+    // [사진] 치환 로직 (기존 유지)
+    if (imgs && imgs.length > 0) {
+        imgs.forEach((src, idx) => {
+            let imgHtml = processImageConfig(src);
+            imgHtml += `<span class="img-caption">[사진 ${idx + 1}]</span>`;
+            processed = processed.replace(`[사진 ${idx + 1}]`, imgHtml);
+        });
+    }
+
+    if (processed.includes('|')) {
+        const lines = processed.split('\n');
+        const tableLines = lines.filter(l => l.trim().startsWith('|'));
+        const data = tableLines.map(line => {
+            let cells = line.split('|').map(c => c.trim());
+            if (cells[0] === "") cells.shift(); 
+            if (cells[cells.length - 1] === "") cells.pop();
+            return cells;
+        });
+
+        const rows = data.length, cols = Math.max(...data.map(d => d.length));
+        const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+        
+        // 🌟 table-layout: fixed와 너비 설정을 보강했습니다.
+        let tableHtml = '<div class="table-container"><table style="table-layout: fixed; width: 100%; border-collapse: collapse; background: white;">';
+        
+        for (let i = 0; i < rows; i++) {
+            tableHtml += '<tr>';
+            for (let j = 0; j < cols; j++) {
+                if (visited[i][j] || data[i][j] === '>' || data[i][j] === '^') continue;
+                
+                let cellVal = processFraction(data[i][j] || "");
+                cellVal = cellVal.replace(/\\n/g, '<br>'); 
+                let cellStyle = "word-break: break-all; overflow: hidden; "; // 🌟 텍스트가 셀을 뚫고 나가지 않게 강제
+
+                // 🌟 너비 조절 (:W) - 대소문자 구분 없이 숫자 추출
+                if (/:W(\d+)/i.test(cellVal)) {
+                    const wMatch = cellVal.match(/:W(\d+)/i);
+                    if (wMatch) {
+                        const widthValue = wMatch[1];
+                        cellStyle += `width: ${widthValue}px !important; min-width: ${widthValue}px !important; `;
+                        cellVal = cellVal.replace(/:W\d+/i, '');
+                    }
+                }
+
+                // 🌟 높이 조절 (:H)
+                if (/:H(\d+)/i.test(cellVal)) {
+                    const hMatch = cellVal.match(/:H(\d+)/i);
+                    if (hMatch) {
+                        cellStyle += `height: ${hMatch[1]}px !important; `;
+                        cellVal = cellVal.replace(/:H\d+/i, '');
+                    }
+                }
+
+                // 🌟 정렬 조절 (:L, :R)
+                let align = "center";
+                if (cellVal.includes(':L')) { align = "left"; cellVal = cellVal.replace(':L', ''); }
+                else if (cellVal.includes(':R')) { align = "right"; cellVal = cellVal.replace(':R', ''); }
+
+                let rowspan = 1, colspan = 1;
+                while (j + colspan < data[i].length && data[i][j + colspan] === '>') colspan++;
+                while (i + rowspan < rows && data[i + rowspan][j] === '^') rowspan++;
+                for (let r = 0; r < rowspan; r++) for (let c = 0; c < colspan; c++) visited[i + r][j + c] = true;
+                
+                tableHtml += `<td rowspan="${rowspan}" colspan="${colspan}" style="text-align: ${align}; ${cellStyle}">${cellVal}</td>`;
+            }
+            tableHtml += '</tr>';
+        }
+        tableHtml += '</table></div>';
+        processed = processed.replace(tableLines.join('\n'), tableHtml);
+    }
+    return processed.split('\n').join('<br>');
+}
+
+        function qHTML(q) {
+            if (!q) return "";
+            const selected = userAns[currentSession][q.id];
+            let rawPassage = q.passage ? q.passage.trim() : "";
+            let textAlignStyle = "text-align: left;";
+            if (rawPassage.includes(':C')) { textAlignStyle = "text-align: center;"; rawPassage = rawPassage.replace(/:C/gi, ''); }
+            if (rawPassage.includes(':W')) { const w = rawPassage.match(/:W(\d+)/); if(w) rawPassage = rawPassage.replace(/:W\d+/g, ''); }
+            
+            let processedPassage = rawPassage ? parseTable(rawPassage, q.imgs) : "";
+            processedPassage = processFraction(processedPassage);
+            let passageBox = rawPassage ? `<div class="${rawPassage.startsWith('|') ? 'table-passage-container' : 'passage-box-container'}" style="${textAlignStyle}">${processedPassage}</div>` : "";
+
+            // 메인 이미지 처리 (이미지 엔진 적용)
+            let questionImgsHtml = '';
+            const imageList = q.imgs || (q.img ? [q.img] : []);
+            if (!rawPassage.includes('[사진') && imageList.length > 0) {
+                questionImgsHtml = `<div class="flex flex-wrap gap-4 mb-6">` + imageList.map((src, idx) => {
+                    return processImageConfig(src).replace('passage-img-box', 'passage-img-box').replace('</div></div>', `<span class="img-caption">[사진 ${idx+1}]</span></div></div>`);
+                }).join('') + `</div>`;
+            }
+
+            let optsHtml = q.options.map((o, i) => {
+                let label = (typeof o === 'object') ? (o.text || "") : o;
+                let optImgRaw = (typeof o === 'object' && o.img) ? o.img : null;
+                label = processFraction(label);
+                let optImgContent = optImgRaw ? `<div class="ml-9 mt-2">${processImageConfig(optImgRaw)}</div>` : "";
+                return `<div onclick="selectAns(${q.id}, ${i+1})" class="opt-item flex flex-col ${selected === i+1 ? 'bg-blue-50' : ''}">
+                    <div class="flex items-start gap-3">
+                        <div class="opt-num ${selected === i+1 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-400'}">${i+1}</div>
+                        <div class="opt-text ${selected === i+1 ? 'font-bold text-blue-700' : 'text-slate-800'} text-left">${label}</div>
+                    </div>${optImgContent}
+                </div>`;
+            }).join('');
+
+            return `<div class="p-8"><div class="mb-6 text-left text-sm font-bold text-slate-500">문제 ${q.id}</div><div class="text-[20px] font-bold mb-6 text-left">${q.text}</div>${passageBox}${questionImgsHtml}<div class="options-grid ${q.options.some(o => typeof o === 'object' && o.img) ? 'has-images' : ''}">${optsHtml}</div></div>`;
+        }
+
+        function setView(v) { viewMode = v; render(); }
+        function render() {
+            const qs = getActiveQs(); const area = document.getElementById('question-area');
+            if (!qs[currIdx]) return;
+            if (viewMode === 2) {
+                area.className = 'flex-1 flex overflow-hidden p-0';
+                area.innerHTML = `<div class="w-1/2 border-r overflow-y-auto p-8 bg-white">${qHTML(qs[currIdx])}</div><div class="w-1/2 overflow-y-auto p-8 bg-white">${qs[currIdx+1] ? qHTML(qs[currIdx+1]) : ''}</div>`;
+            } else {
+                area.className = 'flex-1 overflow-y-auto p-8 bg-white';
+                let html = qHTML(qs[currIdx]);
+                if (qs[currIdx].passage) {
+                    let n = currIdx + 1; while(qs[n] && qs[n].passage === qs[currIdx].passage) html += `<div class="mt-12 pt-12 border-t border-dashed">${qHTML(qs[n++])}</div>`;
+                }
+                area.innerHTML = html;
+            }
+            renderOMR();
+            document.getElementById('curr-idx').innerText = currIdx + 1; 
+            document.getElementById('total-idx').innerText = qs.length; 
+        }
+
+        function openImage(src) { document.getElementById('modal-img').src = src; document.getElementById('image-modal').style.display = 'flex'; }
+        function closeImage() { document.getElementById('image-modal').style.display = 'none'; }
+        function selectAns(id, v) { if(!isReviewMode) { userAns[currentSession][id] = (userAns[currentSession][id] === v) ? undefined : v; render(); } }
+        function switchSession(s) { currentSession = s; currIdx = 0; render(); }
+        function next() { if (currIdx < getActiveQs().length - 1) { currIdx++; render(); } }
+        function prev() { if (currIdx > 0) { currIdx--; render(); } }
+        function toggleHL() { isHL = !isHL; document.getElementById('hl-btn').innerText = isHL ? "🖍 형광펜 ON" : "🖍 형광펜 OFF"; }
+        function doHighlight() { if (!isHL) return; const s = window.getSelection(); if (s.rangeCount > 0 && s.toString().trim() !== "") { const r = s.getRangeAt(0), n = document.createElement('span'); n.className = 'highlight'; try { r.surroundContents(n); } catch (e) {} s.removeAllRanges(); } }
+
+        function renderOMR() {
+            const grid = document.getElementById('omr-grid'); grid.innerHTML = '';
+            getActiveQs().forEach((q, idx) => {
+                const ans = userAns[currentSession][q.id];
+                const clickAction = isReviewMode ? `currIdx=${idx}; render(); showAnalysis(${q.id});` : `currIdx=${idx}; render();`;
+                grid.innerHTML += `<button onclick="${clickAction}" class="h-11 border rounded-lg text-xs font-bold ${idx===currIdx ? 'ring-2 ring-blue-500' : ''} ${ans ? 'bg-[#002855] text-white' : 'bg-white text-slate-400'}">${q.id}<br>${ans || ''}</button>`;
+            });
+        }
+
+        function submitExam() {
+            if(!confirm("제출하시겠습니까?")) return;
+            const subjects = { "언어발달장애": { correct: 0, total: 24, limit: 10 }, "신경언어장애": { correct: 0, total: 24, limit: 10 }, "유창성장애": { correct: 0, total: 24, limit: 10 }, "음성장애": { correct: 0, total: 24, limit: 10 }, "조음·음운장애": { correct: 0, total: 24, limit: 10 }, "현장실무": { correct: 0, total: 20, limit: 8 } };
+            let totalCorrect = 0;
+            const allQs = [...(window.QUESTIONS_S1 || []), ...(window.QUESTIONS_S2 || [])];
+            allQs.forEach(q => {
+                const session = window.QUESTIONS_S1 && window.QUESTIONS_S1.includes(q) ? 1 : 2;
+                if (userAns[session][q.id] === q.answer) {
+                    totalCorrect++;
+                    if (subjects[q.subject]) subjects[q.subject].correct++;
+                }
+            });
+            isReviewMode = true; renderOMR();
+            let reportHtml = `<ul class="space-y-2 mb-4">`;
+            let failCount = 0;
+            for (const [name, info] of Object.entries(subjects)) {
+                const isFail = info.correct < info.limit; if (isFail) failCount++;
+                reportHtml += `<li class="flex justify-between items-center text-sm"><span>• ${name}:</span><span class="font-bold">${info.correct}/${info.total} ${isFail ? '<span class="text-red-500">(❌과락)</span>' : '<span class="text-emerald-500">(✅통과)</span>'}</span></li>`;
+            }
+            const finalPass = totalCorrect >= 84 && failCount === 0;
+            reportHtml += `</ul><div class="border-t pt-4 mt-4 border-dashed border-slate-300"><b>총 정답: ${totalCorrect}/140</b><div class="text-xl font-black mt-4 ${finalPass ? 'text-blue-600' : 'text-red-600'}">결과: ${finalPass ? '★ 합격입니다! ★' : '불합격입니다.'}</div></div>`;
+            document.getElementById('result-report').innerHTML = reportHtml;
+            document.getElementById('exam-result-modal').style.display = 'flex';
+        }
+
+        function showAnalysis(questionId) {
+            const formattedId = "Q_" + String(questionId).padStart(3, '0');
+            const data = window.CONCEPT_DATABASE ? window.CONCEPT_DATABASE[formattedId] : null;
+            if (!data) return;
+            document.getElementById('modal-title').innerText = data.title;
+            document.getElementById('modal-point').innerText = data.point;
+            const mindmapArea = document.getElementById('modal-mindmap');
+            if (data.mindmap && (data.mindmap.includes('.png') || data.mindmap.includes('.jpg'))) {
+                mindmapArea.innerHTML = `<img src="${data.mindmap}" class="max-w-full h-auto rounded-lg shadow-sm" onerror="this.src='https://via.placeholder.com/300?text=이미지 준비중'">`;
+            } else if (data.mindmap) {
+                const tags = data.mindmap.split('/').map(tag => `<span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-bold text-xs border border-blue-200">${tag.trim()}</span>`).join('');
+                mindmapArea.innerHTML = `<div class="flex flex-wrap gap-2 justify-center">${tags}</div>`;
+            }
+            // 영상 처리 영역 (MP4 & 유튜브 통합 로직)
+            const videoArea = document.getElementById('modal-video');
+            
+            if (data.video) {
+                // 1. 유튜브 링크인 경우 (http 포함 시)
+                if (data.video.includes('http')) {
+                    const embedUrl = data.video.includes('embed') ? data.video : data.video.replace("watch?v=", "embed/");
+                    videoArea.innerHTML = `<iframe width="100%" height="100%" src="${embedUrl}" frameborder="0" allowfullscreen></iframe>`;
+                } 
+                // 2. MP4 파일인 경우 (확장자 확인)
+                else if (data.video.toLowerCase().endsWith('.mp4')) {
+                    videoArea.innerHTML = `
+                        <video width="100%" height="100%" controls autoplay class="rounded-lg">
+                            <source src="${data.video}" type="video/mp4">
+                            브라우저가 비디오 태그를 지원하지 않습니다.
+                        </video>`;
+                } 
+                // 3. 그 외 형식
+                else {
+                    videoArea.innerHTML = `<div class='flex items-center justify-center h-full text-white text-xs text-center p-4'>지원하지 않는 영상 형식입니다.<br>(${data.video})</div>`;
+                }
+            } else {
+                // 영상 데이터 자체가 없을 때
+                videoArea.innerHTML = `<div class='flex items-center justify-center h-full text-white text-xs'>영상 자료 없음</div>`;
+            }
+            document.getElementById('wrong-answer-modal').style.display = 'flex';
+        }
+
+        window.onload = () => {
+            setInterval(() => { if (time > 0) { time--; const m = Math.floor(time / 60), s = time % 60; document.getElementById('timer').innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; } }, 1000);
+            render();
+        };
+    </script>
+</body>
+</html>
