@@ -123,51 +123,104 @@ if mode == "🛠️ 문항별 개별 수정":
 else:
     st.header("🎓 언어재활사 국가시험 CBT")
     
+    # CSS 스타일 정의 (상단에 한 번만 정의)
+    st.markdown("""
+        <style>
+        .case-box {
+            border: 2px solid #555;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .question-text {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .explanation-box {
+            background-color: #f0f7ff;
+            border-left: 5px solid #2196F3;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     quiz_data = df.to_dict('records')
     
     if not quiz_data:
         st.error("데이터가 비어 있습니다. 수정 모드에서 문제를 먼저 확인해주세요!")
     else:
         if 'questions' not in st.session_state:
-            # 전체 데이터 중 랜덤 추출
             st.session_state.questions = random.sample(quiz_data, min(140, len(quiz_data)))
             st.session_state.current_idx = 0
             st.session_state.score = 0
+            st.session_state.show_answer = False # 정답 보기 상태 추가
 
         if st.session_state.current_idx < len(st.session_state.questions):
             q = st.session_state.questions[st.session_state.current_idx]
             
-            st.subheader(f"문제 {st.session_state.current_idx + 1}")
-            st.progress(st.session_state.current_idx / len(st.session_state.questions))
+            # 상단 진행바 및 문제 번호
+            st.write(f"**문항 {st.session_state.current_idx + 1} / {len(st.session_state.questions)}**")
+            st.progress((st.session_state.current_idx + 1) / len(st.session_state.questions))
 
-            # 사례 박스 출력
+            # 1. 문제 질문 출력
+            st.markdown(f"<div class='question-text'>{q['question']}</div>", unsafe_allow_html=True)
+
+            # 2. 사례 박스 출력 (이미지처럼 테두리 박스 적용)
             if pd.notna(q['case_box']) and str(q['case_box']).strip() != "":
-                st.info(q['case_box'])
+                st.markdown(f"""
+                <div class="case-box">
+                    <strong>[사례]</strong><br>
+                    {q['case_box']}
+                </div>
+                """, unsafe_allow_html=True)
 
-            # 이미지 출력
+            # 3. 이미지 출력
             if pd.notna(q['image_path']) and str(q['image_path']).strip() != "":
                 img_path = os.path.join("images", str(q['image_path']))
                 if os.path.exists(img_path):
-                    st.image(img_path)
+                    st.image(img_path, use_container_width=True)
 
-            st.markdown(f"### {q['question']}")
-            
-            # 보기 리스트
+            # 4. 보기 선택 (라디오 버튼)
             opts = [str(q['option1']), str(q['option2']), str(q['option3']), str(q['option4']), str(q['option5'])]
             choice = st.radio("정답을 선택하세요", opts, key=f"play_{st.session_state.current_idx}")
 
-            if st.button("다음 문제로"):
-                # 정답 비교 (숫자로 변환 후 인덱스 비교)
-                try:
-                    correct_idx = int(float(str(q['answer'])))
-                    if choice == opts[correct_idx-1]:
-                        st.session_state.score += 1
-                except:
-                    pass # 정답 데이터 오류 시 무시
-                
-                st.session_state.current_idx += 1
-                st.rerun()
+            # 5. 하단 버튼 영역
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("정답 확인", use_container_width=True):
+                    st.session_state.show_answer = True
+            
+            with col_btn2:
+                if st.button("다음 문제로 ➡️", use_container_width=True):
+                    # 정답 체크
+                    try:
+                        correct_idx = int(float(str(q['answer'])))
+                        if choice == opts[correct_idx-1]:
+                            st.session_state.score += 1
+                    except: pass
+                    
+                    # 상태 초기화 및 다음 문제
+                    st.session_state.current_idx += 1
+                    st.session_state.show_answer = False
+                    st.rerun()
+
+            # 6. 정답 및 해설 출력 (정답 확인 버튼 클릭 시)
+            if st.session_state.show_answer:
+                correct_idx = int(float(str(q['answer'])))
+                st.markdown(f"""
+                <div class="explanation-box">
+                    <h4 style='margin-top:0;'>📍 정답: {correct_idx}번</h4>
+                    <p><strong>해설:</strong> {q.get('explanation', '해설 내용이 없습니다.')}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
         else:
+            # 결과 화면 (이전과 동일)
             st.balloons()
             st.header("🎊 결과 발표")
             total_q = len(st.session_state.questions)
