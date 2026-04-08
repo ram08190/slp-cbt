@@ -102,21 +102,28 @@ if mode == "🛠️ 문항별 개별 수정":
                 st.success("새 이미지가 업로드되었습니다!")
 
         # 3. 저장 버튼
-        if st.button("✅ 현재 문항 수정사항 저장", use_container_width=True):
-            df.at[selected_idx, 'question'] = new_question
-            df.at[selected_idx, 'case_box'] = new_case
-            df.at[selected_idx, 'option1'] = opt1
-            df.at[selected_idx, 'option2'] = opt2
-            df.at[selected_idx, 'option3'] = opt3
-            df.at[selected_idx, 'option4'] = opt4
-            df.at[selected_idx, 'option5'] = opt5
-            df.at[selected_idx, 'answer'] = new_ans
-            df.at[selected_idx, 'image_path'] = new_img_name
-            
-            df.to_csv("quiz_db.csv", index=False)
-            st.balloons()
-            st.success(f"{selected_idx+1}번 문제가 성공적으로 수정되었습니다!")
-
+       if st.button("✅ 현재 문항 수정사항 저장", use_container_width=True):
+    # --- 데이터 타입 강제 변환 (TypeError 방지) ---
+    # answer 컬럼을 object 타입으로 변환하여 숫자/문자 모두 들어갈 수 있게 만듭니다.
+    df['answer'] = df['answer'].astype(object) 
+    
+    df.at[selected_idx, 'question'] = new_question
+    df.at[selected_idx, 'case_box'] = new_case
+    df.at[selected_idx, 'option1'] = opt1
+    df.at[selected_idx, 'option2'] = opt2
+    df.at[selected_idx, 'option3'] = opt3
+    df.at[selected_idx, 'option4'] = opt4
+    df.at[selected_idx, 'option5'] = opt5
+    
+    # 정답 번호를 문자열로 변환해서 저장 (가장 안전한 방법)
+    df.at[selected_idx, 'answer'] = str(new_ans) 
+    
+    df.at[selected_idx, 'image_path'] = new_img_name
+    
+    # CSV 저장
+    df.to_csv("quiz_db.csv", index=False)
+    st.balloons()
+    st.success(f"{selected_idx+1}번 문제가 성공적으로 수정되었습니다!")
 # ---------------------------------------------------------
 # 모드 2: 시험 풀기 (CBT)
 # ---------------------------------------------------------
