@@ -126,12 +126,24 @@ else:
         df.at[q_idx, 'img'] = st.text_input("메인 이미지 (파일명:옵션)", value=df.loc[q_idx, 'img'], placeholder="pic1.png:C")
 
     with tab2:
-        df.at[q_idx, 'answer'] = st.number_input("정답 번호 (1-5)", 1, 5, value=int(float(df.loc[q_idx, 'answer'] or 1)))
+        # 1. 화면에 보여줄 숫자 입력창 (변수에 먼저 담습니다)
+        try:
+            current_ans_val = int(float(df.loc[q_idx, 'answer'] or 1))
+        except:
+            current_ans_val = 1
+            
+        new_ans_val = st.number_input("정답 번호 (1-5)", 1, 5, value=current_ans_val, key=f"ans_input_{q_idx}")
+        
+        # 2. 데이터프레임에 저장할 때는 문자열로 변환하여 에러 방지
+        # df.at 대신 컬럼 전체의 타입을 object로 미리 바꿔주는 것이 더 안전합니다.
+        df['answer'] = df['answer'].astype(object)
+        df.at[q_idx, 'answer'] = str(new_ans_val)
+
         for i in range(1, 6):
             st.markdown(f"**보기 {i}**")
             col_t, col_i = st.columns([2, 1])
-            df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i} 텍스트", value=df.loc[q_idx, f'option{i}'], key=f"t{i}_{q_idx}")
-            df.at[q_idx, f'opt_img{i}'] = col_i.text_input(f"보기 {i} 이미지", value=df.loc[q_idx, f'opt_img{i}'], key=f"i{i}_{q_idx}")
+            df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i} 텍스트", value=str(df.loc[q_idx, f'option{i}']), key=f"t{i}_{q_idx}")
+            df.at[q_idx, f'opt_img{i}'] = col_i.text_input(f"보기 {i} 이미지", value=str(df.loc[q_idx, f'opt_img{i}']), key=f"i{i}_{q_idx}")
 
     with tab3:
         st.info("시험 제출 후 표시될 오답 분석 데이터입니다.")
