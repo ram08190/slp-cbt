@@ -66,7 +66,11 @@ if mode == "📝 시험 시작 (통합 시스템)":
         else: s1_list.append(q_obj)
 
         # 오답 분석 데이터베이스 생성
-        f_id = "Q_" + str(q_id).padStart(3, '0')
+      f_id = "Q_" + str(q_id).zfill(3) 
+        
+        # 또는 아래와 같이 f-string을 써도 됩니다 (추천)
+        # f_id = f"Q_{q_id:03d}" 
+
         concept_db[f_id] = {
             "title": str(row['concept_title']),
             "point": str(row['concept_point']),
