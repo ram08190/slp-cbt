@@ -97,38 +97,61 @@ if mode == "📝 시험 시작":
 # ---------------------------------------------------------
 # 모드 2: 문항 관리 (보기 이미지 업로드 기능 포함)
 # ---------------------------------------------------------
+# ---------------------------------------------------------
+# 모드 2: 문항 관리 (들여쓰기 및 엑셀 도우미 완벽 수정)
+# ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
-    st.header("🛠️ 문항 및 이미지 관리")
+    st.header("🛠️ 문항 관리 시스템")
     all_df = st.session_state.df
-    sel_sess = st.radio("교시", ["1교시", "2교시"], horizontal=True)
+    sel_sess = st.radio("교시 선택", ["1교시", "2교시"], horizontal=True)
     target_df = all_df[all_df['id'] < 200] if "1교시" in sel_sess else all_df[all_df['id'] >= 200]
-    q_idx = st.selectbox("수정 문항", target_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id']) % 100}번")
+    q_idx = st.selectbox("수정할 문항 선택", target_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id']) % 100}번 문제")
     
-    t1, t2, t3 = st.tabs(["📄 지문/이미지", "🔢 보기/보기이미지", "💡 엑셀 도우미"])
+    # 탭 생성
+    t1, t2, t3 = st.tabs(["📄 문제 지문/이미지", "🔢 보기 및 정답", "💡 엑셀 표 도우미"])
+    
     with t1:
-        all_df.at[q_idx, 'question'] = st.text_area("지문", clean_val(all_df.loc[q_idx, 'question']), key=f"q_{q_idx}")
-        m_f = st.file_uploader("지문 사진", type=['png','jpg'], key=f"m_{q_idx}")
-        if m_f:
-            with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
-            all_df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
-    with t2:
-        for i in range(1, 6):
-            col_t, col_i = st.columns([2, 1])
-            all_df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o_{i}_{q_idx}")
-            o_f = col_i.file_uploader(f"보기{i} 사진", type=['png','jpg'], key=f"ou{i}_{q_idx}")
-            if o_f:
-                with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
-                all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
- with t3:
-        st.subheader("💡 엑셀 표 -> 사례박스 변환 도우미")
-        st.write("엑셀 내용을 붙여넣으면 마크다운 표로 변환해 드립니다. 변환 후 '사례 박스' 탭에서 자유롭게 추가 수정하세요!")
+        st.subheader("문제 기본 정보")
+        all_df.at[q_idx, 'subject'] = st.text_input("과목명", clean_val(all_df.loc[q_idx, 'subject']), key=f"s_{q_idx}")
+        all_df.at[q_idx, 'question'] = st.text_area("문제 지문 (질문)", clean_val(all_df.loc[q_idx, 'question']), height=100, key=f"q_{q_idx}")
         
-        # 1. 엑셀 데이터 입력창
-        excel_in = st.text_area("엑셀 데이터를 여기에 붙여넣으세요", height=150, help="엑셀에서 복사한 내용을 그대로 붙여넣으세요.")
+        st.write("---")
+        st.subheader("사례 박스 (표/지문 추가 수정)")
+        all_df.at[q_idx, 'case_box'] = st.text_area("사례 박스 내용", clean_val(all_df.loc[q_idx, 'case_box']), height=200, key=f"c_{q_idx}", help="엑셀 도우미에서 보낸 표가 여기로 들어옵니다. 여기서 직접 수정하세요!")
+        
+        st.write("---")
+        st.subheader("🖼️ 메인 이미지 설정")
+        m_f = st.file_uploader("사진 선택 (PC의 images 폴더 안의 파일을 선택하세요)", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
+        if m_f:
+            # 서버 임시 폴더에 저장
+            with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f:
+                f.write(m_f.getbuffer())
+            all_df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
+            st.success(f"현재 선택된 파일: {m_f.name}")
+
+    with t2:
+        st.subheader("정답 및 보기 관리")
+        all_df.at[q_idx, 'answer'] = st.number_input("정답 번호 (1-5)", 1, 5, value=int(float(clean_val(all_df.loc[q_idx, 'answer']) or 1)))
+        
+        st.write("---")
+        for i in range(1, 6):
+            col_t, col_i = st.columns([3, 1])
+            all_df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i} 텍스트", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"ot{i}_{q_idx}")
+            o_f = col_i.file_uploader(f"보기{i} 사진", type=['png','jpg','jpeg'], key=f"ou{i}_{q_idx}")
+            if o_f:
+                with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f:
+                    f.write(o_f.getbuffer())
+                all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
+
+    with t3:
+        st.subheader("💡 엑셀 표 -> 사례박스 1차 변환기")
+        st.write("엑셀 내용을 붙여넣으면 마크다운 표로 변환하여 '사례 박스'로 보내드립니다.")
+        
+        excel_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=150)
         
         if excel_in:
-            # 🌟 1차 변환 로직: 따옴표 청소 + 마크다운 규격 맞추기
-            raw_text = excel_in.replace('"', '').strip() # 엑셀 특유의 따옴표 제거
+            # 따옴표 제거 및 데이터 정리
+            raw_text = excel_in.replace('"', '').strip()
             lines = raw_text.split('\n')
             
             if len(lines) > 0:
@@ -136,21 +159,26 @@ elif mode == "🛠️ 문항 관리":
                 for i, line in enumerate(lines):
                     cols = [c.strip() for c in line.split('\t')]
                     md_list.append("| " + " | ".join(cols) + " |")
-                    if i == 0: # 표 헤더 구분선 자동 삽입
+                    if i == 0: # 헤더 구분선 추가
                         md_list.append("| " + " | ".join(["---"] * len(cols)) + " |")
                 
                 md_result = "\n".join(md_list)
                 
-                # 2. 미리보기 (내가 작업한 결과가 어떤 표가 될지 확인)
-                st.info("▼ 아래와 같은 표로 변환됩니다.")
+                st.info("▼ 변환 결과 미리보기")
                 st.markdown(md_result)
                 
-                # 3. 사례 박스로 쏘기 버튼
-                if st.button("🚀 이 내용을 사례 박스로 보내기"):
-                    # 기존 사례 박스 내용을 덮어쓰거나, 뒤에 추가할 수 있습니다. 
-                    # 여기서는 1차 변환 결과물로 교체하도록 설정했습니다.
+                if st.button("🚀 이 표를 사례 박스로 보내기"):
                     all_df.at[q_idx, 'case_box'] = md_result
-                    st.success("사례 박스로 전송 완료! 이제 '📄 지문/이미지' 탭에서 나머지 수정을 진행하세요.")
+                    st.success("전송 완료! '📄 문제 지문/이미지' 탭의 사례 박스에서 내용을 확인하고 추가 수정하세요.")
+
+    # 모든 탭 밖에서 공통 저장 버튼
+    st.write("---")
+    if st.button("💾 모든 수정사항 최종 저장하기", use_container_width=True):
+        st.session_state.df = all_df
+        all_df.to_csv(DB_FILE, index=False)
+        st.success("데이터베이스(CSV) 파일이 성공적으로 저장되었습니다!")
+        time.sleep(1)
+        st.rerun()
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터
 # ---------------------------------------------------------
