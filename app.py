@@ -16,7 +16,7 @@ IMAGE_DIR = "images"
 if not os.path.exists(IMAGE_DIR): 
     os.makedirs(IMAGE_DIR)
 
-# 🌟 [이미지 로더] 파일을 읽어 Base64 데이터로 변환
+# 🌟 이미지를 Base64로 변환 (서버 경로 문제 원천 차단)
 def get_image_data(img_path):
     if not img_path: return ""
     file_name = img_path.split('/')[-1].split(':')[0].strip()
@@ -30,6 +30,7 @@ def get_image_data(img_path):
             except: continue
     return ""
 
+# 데이터 로드 로직
 def load_data():
     s1_ids = [100 + i for i in range(1, 81)]
     s2_ids = [200 + i for i in range(1, 71)]
@@ -52,7 +53,7 @@ def clean_val(x):
 mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리", "📊 성적 통계 센터"])
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작 (지문/이미지 실종 해결)
+# 모드 1: 시험 시작 (TypeError 및 지문 실종 해결)
 # ---------------------------------------------------------
 if mode == "📝 시험 시작":
     df = st.session_state.df
@@ -63,46 +64,60 @@ if mode == "📝 시험 시작":
             q_obj = {
                 "id": real_id % 100,
                 "subject": clean_val(row.get('subject', '')),
-                "text": clean_val(row.get('question', '')), # 👈 지문
+                "text": clean_val(row.get('question', '')), # 지문
                 "passage": clean_val(row.get('case_box', '')),
                 "answer": int(float(clean_val(row.get('answer', 1)) or 1)),
-                "img": get_image_data(clean_val(row.get('img', ''))), # 👈 이미지 데이터화
+                "img": get_image_data(clean_val(row.get('img', ''))), # 이미지 데이터화
                 "options": [{"text": clean_val(row.get(f'option{i}', '')), "img": get_image_data(clean_val(row.get(f'opt_img{i}', '')))} for i in range(1, 6)]
             }
             if real_id < 200: s1_list.append(q_obj)
             else: s2_list.append(q_obj)
-            concept_db[f"Q_{real_id:03d}"] = {"title": clean_val(row.get('concept_title', '')), "point": clean_val(row.get('concept_point', ''))}
+            concept_db[f"Q_{real_id:03d}"] = {
+                "title": clean_val(row.get('concept_title', '')), 
+                "point": clean_val(row.get('concept_point', ''))
+            }
         except: continue
 
     if os.path.exists(HTML_FILE):
         with open(HTML_FILE, "r", encoding="utf-8") as f:
             base_html = f.read()
         
-        # 🌟 TypeError 방지를 위해 고정된 key 사용 및 데이터 주입
+        # 🌟 데이터를 안전하게 주입하고 강제 렌더링 호출
         inject_code = f"""
         <script>
             window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};
             window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};
             window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};
-            setTimeout(() => {{ window.render(); }}, 500); // 👈 지문 강제 출력
+            
+            // 페이지 로드 후 데이터가 전역에 깔리면 render 실행
+            document.addEventListener('DOMContentLoaded', () => {{
+                if(window.render) window.render();
+            }});
+            setTimeout(() => {{ if(window.render) window.render(); }}, 800);
         </script>
         """
-        final_html = base_html.replace('<script src="questions1.js"></script>', '').replace('<script src="questions2.js"></script>', '').replace('<script src="database.js"></script>', inject_code)
-        st.components.v1.html(final_html, height=1200, scrolling=True, key="cbt_main_display")
+        # 기존 태그 제거 및 교체
+        final_html = str(base_html).replace('<script src="questions1.js"></script>', '')\
+                                   .replace('<script src="questions2.js"></script>', '')\
+                                   .replace('<script src="database.js"></script>', '')
+        final_html = final_html.replace('</body>', inject_code + '</body>')
+        
+        # 🌟 핵심: final_html을 확실하게 문자열로 전달
+        st.components.v1.html(final_html, height=1200, scrolling=True)
 
 # ---------------------------------------------------------
-# 모드 2: 문항 관리 (기존 모든 옵션 포함)
+# 모드 2: 문항 관리 (탭 및 엑셀 도우미 전체 포함)
 # ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
     st.header("🛠️ 문항 관리 시스템")
     all_df = st.session_state.df
     sel_sess = st.radio("교시 선택", ["1교시", "2교시"], horizontal=True)
     target_df = all_df[all_df['id'] < 200] if "1교시" in sel_sess else all_df[all_df['id'] >= 200]
-    q_idx = st.selectbox("수정할 문항 선택", target_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id']) % 100}번 문제")
+    q_idx = st.selectbox("수정할 문항", target_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id']) % 100}번 문제")
     
     df = all_df.copy()
-    tab1, tab2, tab3 = st.tabs(["📄 문제 지문/사례", "🔢 보기/이미지", "💡 엑셀 도우미"])
-    with tab1:
+    t1, t2, t3 = st.tabs(["📄 지문/사례", "🔢 보기/이미지", "💡 엑셀 도우미"])
+    with t1:
         df.at[q_idx, 'subject'] = st.text_input("과목명", clean_val(df.loc[q_idx, 'subject']), key=f"s_{q_idx}")
         df.at[q_idx, 'question'] = st.text_area("문제 지문", clean_val(df.loc[q_idx, 'question']), key=f"q_{q_idx}")
         df.at[q_idx, 'case_box'] = st.text_area("사례 박스", clean_val(df.loc[q_idx, 'case_box']), key=f"c_{q_idx}")
@@ -110,23 +125,23 @@ elif mode == "🛠️ 문항 관리":
         if m_f:
             with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
             df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
-    with tab2:
+    with t2:
         df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, int(float(clean_val(df.loc[q_idx, 'answer']) or 1)))
         for i in range(1, 6):
             df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i}", clean_val(df.loc[q_idx, f'option{i}']), key=f"ot{i}_{q_idx}")
-    with tab3:
+    with t3:
         excel_in = st.text_area("엑셀 붙여넣기")
         if excel_in:
             md = "".join(["| " + " | ".join(l.split('\t')) + " |\n" for l in excel_in.strip().split('\n')])
             st.code(md)
-            if st.button("적용"): df.at[q_idx, 'case_box'] = md; st.success("적용됨")
+            if st.button("사례 박스 적용"): df.at[q_idx, 'case_box'] = md; st.success("적용 완료")
     
-    if st.button("💾 저장하기", use_container_width=True):
+    if st.button("💾 이 문항 저장하기", use_container_width=True):
         st.session_state.df = df
-        df.to_csv(DB_FILE, index=False); st.success("저장 완료!"); st.rerun()
+        df.to_csv(DB_FILE, index=False); st.success("저장 성공!"); st.rerun()
 
 # ---------------------------------------------------------
-# 모드 3: 성적 통계 센터 (완벽 복구)
+# 모드 3: 성적 통계 센터 (복구)
 # ---------------------------------------------------------
 else:
     st.header("📊 성적 통계 센터")
@@ -135,8 +150,8 @@ else:
         st.metric("총 응시 인원", f"{len(rdf)}명")
         st.line_chart(rdf['score'])
     else: st.info("기록이 없습니다.")
-    with st.expander("➕ 수동 기록"):
-        s = st.number_input("점수", 0, 140, 80)
-        if st.button("저장"):
-            new = pd.DataFrame([{"timestamp": datetime.now(), "score": s}])
+    with st.expander("➕ 수동 추가"):
+        score = st.number_input("점수", 0, 140, 80)
+        if st.button("기록 저장"):
+            new = pd.DataFrame([{"timestamp": datetime.now(), "score": score}])
             new.to_csv(RESULT_FILE, mode='a', header=not os.path.exists(RESULT_FILE), index=False); st.rerun()
