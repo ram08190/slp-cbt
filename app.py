@@ -77,13 +77,13 @@ if mode == "📝 시험 시작":
         st.components.v1.html(base_html.replace('</body>', inject + '</body>'), height=1200, scrolling=True)
 
 # ---------------------------------------------------------
-# 모드 2: 문항 관리 (들여쓰기 및 실시간 편집기 완벽 정렬)
+# 모드 2: 문항 관리 (들여쓰기 교정 및 사용자 요청 편집 프로세스 반영)
 # ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
     st.header("🛠️ 문항 관리 시스템")
     all_df = st.session_state.df
     
-    # 1. 교시 및 번호 선택 (교시별 독립 번호 지원)
+    # 1. 교시 및 문항 선택
     c1, c2 = st.columns(2)
     with c1:
         sel_sess = st.selectbox("교시 선택", ["1교시 (1-80번)", "2교시 (1-70번)"], key="sess_select")
@@ -93,12 +93,11 @@ elif mode == "🛠️ 문항 관리":
         target_ids = list(range(start_id, end_id))
         sel_num = st.selectbox("문항 선택", target_ids, format_func=lambda x: f"{x % 100}번", key="num_select")
 
-    # 선택된 행 인덱스 찾기
     q_row = all_df[all_df['id'] == sel_num]
     if not q_row.empty:
         q_idx = q_row.index[0]
         
-        # 🌟 탭 생성 (여기서부터 들여쓰기가 매우 중요합니다!)
+        # 🌟 탭 생성 (여기가 들여쓰기 에러의 핵심 구역입니다)
         tab1, tab2, tab3 = st.tabs(["📄 지문/이미지", "🔢 보기/정답", "💡 엑셀 실시간 편집기"])
         
         with tab1:
@@ -122,14 +121,14 @@ elif mode == "🛠️ 문항 관리":
                         f.write(o_f.getbuffer())
                     all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
-      with tab3:
-            st.subheader("💡 엑셀 실시간 편집기 (Alt+Enter 대응)")
+        with tab3:
+            st.subheader("💡 엑셀 표 편집 프로세스")
             
-            # 1. 엑셀 붙여넣기 창
-            ex_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key=f"ex_input_{sel_num}")
+            # 1단계: 엑셀 데이터 입력
+            ex_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요 (Alt+Enter 포함 가능)", height=100, key=f"ex_input_{sel_num}")
             
-            # 변환 버튼 (이걸 눌러야 2번 창으로 넘어갑니다)
-            if st.button("🔄 엑셀을 마크다운 표 코드로 변환하기", use_container_width=True):
+            # 2단계: 변환 버튼
+            if st.button("🔄 마크다운 표 코드로 변환하기", use_container_width=True):
                 if ex_in:
                     raw = ex_in.strip()
                     processed_text = ""
@@ -151,32 +150,37 @@ elif mode == "🛠️ 문항 관리":
                         if i == 0:
                             md_rows.append("| " + " | ".join(["---"] * len(cols)) + " |")
                     
-                    # 2번 창에 뿌려줄 값을 세션에 저장
                     st.session_state[f"temp_md_{sel_num}"] = "\n".join(md_rows)
                     st.rerun()
 
-            # 2. 마크다운 수정 창 (여기서 고치는 건 버튼 없이 실시간 반영됩니다)
+            # 3단계: 수정 및 무한 확인 (2번 창에서 고치면 즉시 아래 미리보기에 반영)
             initial_md = st.session_state.get(f"temp_md_{sel_num}", clean_val(all_df.loc[q_idx, 'case_box']))
             
             final_md = st.text_area(
-                "2. 마크다운 수정 (여기서 내용을 고치면 아래 실시간 미리보기가 바뀝니다)", 
+                "2. 마크다운 수정 (여기서 고치면 아래 실시간 미리보기가 바뀝니다)", 
                 value=initial_md, 
                 height=250, 
                 key=f"edt_area_{sel_num}"
             )
             
-            # 수정한 내용을 다시 세션에 저장 (미리보기용)
+            # 미리보기용 세션 업데이트
             st.session_state[f"temp_md_{sel_num}"] = final_md
             
             st.markdown("---")
             st.write("▼ 실시간 미리보기 (무한 수정 확인 가능)")
             if final_md:
-                # 🌟 실시간 반영 핵심 부분
                 st.markdown(final_md, unsafe_allow_html=True)
             
-            if st.button("🚀 이 표를 사례 박스에 최종 적용", use_container_width=True):
+            # 4단계: 최종 적용
+            if st.button("🚀 이 결과물을 사례 박스에 최종 적용", use_container_width=True):
                 all_df.at[q_idx, 'case_box'] = final_md
-                st.success("사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인 후 최종 저장하세요.")
+                st.success("사례 박스에 적용되었습니다! 📄 지문 탭에서 확인하세요.")
+
+    # 공통 저장 버튼 (탭 밖)
+    st.divider()
+    if st.button("💾 모든 수정사항 최종 저장하기", use_container_width=True):
+        all_df.to_csv(DB_FILE, index=False)
+        st.success("데이터베이스 저장 완료!"); time.sleep(1); st.rerun()
 
     # 🌟 모든 탭 밖에서 최종 저장 (들여쓰기 확인 필수)
     st.divider()
