@@ -2,18 +2,20 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+from datetime import datetime
 
 # 1. 페이지 설정
 st.set_page_config(page_title="언어재활사 2급 통합 CBT", layout="wide")
 
 DB_FILE = "quiz_db.csv"
+RESULT_FILE = "results.csv" # 성적 누적 파일
 HTML_FILE = "자동화.html"
 IMAGE_DIR = "images"
 
 if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
 
-# [데이터 로드] 1교시 80 / 2교시 70 고정 체계 유지
+# [데이터 로드] 문항 데이터 (ID: 101~180, 201~270)
 def load_data():
     required_cols = [
         "id", "session", "subject", "question", "case_box", "answer", 
@@ -34,9 +36,7 @@ def load_data():
         if missing_ids:
             new_rows = []
             for m_id in missing_ids:
-                row = {col: "" for col in required_cols}
-                row["id"] = m_id
-                row["session"] = "1" if m_id < 200 else "2"
+                row = {col: "" for col in required_cols}; row["id"] = m_id; row["session"] = "1" if m_id < 200 else "2"
                 new_rows.append(row)
             df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
         df = df[df['id'].isin(all_target_ids)]
@@ -52,11 +52,11 @@ def clean_val(x):
     s = str(x).strip()
     return "" if s.lower() in ['nan', 'none', ''] else s
 
-# 메뉴 선택
-mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리"])
+# --- 사이드바 메뉴 ---
+mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리", "📊 성적 통계 센터"])
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작 (자동화.html 데이터 전달)
+# 모드 1: 시험 시작
 # ---------------------------------------------------------
 if mode == "📝 시험 시작":
     df = st.session_state.df
@@ -86,44 +86,37 @@ if mode == "📝 시험 시작":
         st.components.v1.html(final_html, height=1200, scrolling=True)
 
 # ---------------------------------------------------------
-# 모드 2: 문항 관리 (1/2교시 분리 및 기존 입력 폼 전체 유지)
+# 모드 2: 문항 관리 (기존 입력 폼 + 엑셀 도우미 완벽 복구)
 # ---------------------------------------------------------
-else:
+elif mode == "🛠️ 문항 관리":
     st.header("🛠️ 문항 관리 및 엑셀 표 도우미")
     all_df = st.session_state.df
     sel_sess = st.radio("관리할 교시 선택", ["1교시 (80문항)", "2교시 (70문항)"], horizontal=True)
-    
-    # 교시 필터링
     target_df = all_df[all_df['id'] < 200] if "1교시" in sel_sess else all_df[all_df['id'] >= 200]
-    
     q_idx = st.selectbox("수정할 문항 선택", target_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id']) % 100}번 문제")
-    st.divider()
     
-    df = all_df.copy() # 작업용 카피
-    
-    # 🌟 기존 코드의 3개 탭 구성 유지 + 엑셀 도우미 포함
-    tab1, tab2, tab3 = st.tabs(["📄 문제 내용 및 사례(표)", "🔢 보기 및 이미지 업로드", "💡 엑셀 표 붙여넣기 도우미"])
+    df = all_df.copy()
+    tab1, tab2, tab3 = st.tabs(["📄 문제 내용 및 사례", "🔢 보기 및 이미지", "💡 엑셀 표 도우미"])
 
     with tab1:
         c1, c2 = st.columns([2, 1])
         with c1:
             df.at[q_idx, 'subject'] = st.text_input("과목명", value=clean_val(df.loc[q_idx, 'subject']), key=f"s_{q_idx}")
             df.at[q_idx, 'question'] = st.text_area("문제 지문", value=clean_val(df.loc[q_idx, 'question']), height=100, key=f"q_{q_idx}")
-            df.at[q_idx, 'case_box'] = st.text_area("사례 박스 (표가 들어가는 곳)", value=clean_val(df.loc[q_idx, 'case_box']), height=150, key=f"c_{q_idx}")
+            df.at[q_idx, 'case_box'] = st.text_area("사례 박스", value=clean_val(df.loc[q_idx, 'case_box']), height=150, key=f"c_{q_idx}")
         with c2:
-            st.write("🖼️ 메인 문제 이미지")
-            m_f = st.file_uploader("이미지 선택", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
+            st.write("🖼️ 메인 이미지")
+            m_f = st.file_uploader("사진 선택", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
             if m_f:
                 with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
                 df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
             if st.button("이미지 삭제", key=f"md_{q_idx}"): df.at[q_idx, 'img'] = ""; st.rerun()
 
     with tab2:
-        df.at[q_idx, 'answer'] = st.number_input("정답 (1-5)", 1, 5, value=int(float(clean_val(df.loc[q_idx, 'answer']) or 1)))
-        st.divider()
+        df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, value=int(float(clean_val(df.loc[q_idx, 'answer']) or 1)))
         for i in range(1, 6):
             col_t, col_i = st.columns([2, 1])
-            df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i} 텍스트", value=clean_val(df.loc[q_idx, f'option{i}']), key=f"ot{i}_{q_idx}")
+            df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i}", value=clean_val(df.loc[q_idx, f'option{i}']), key=f"ot{i}_{q_idx}")
             o_f = col_i.file_uploader(f"보기 {i} 이미지", type=['png','jpg','jpeg'], key=f"ou{i}_{q_idx}")
             if o_f:
                 with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
@@ -131,22 +124,47 @@ else:
             st.markdown("---")
 
     with tab3:
-        st.subheader("📊 엑셀 표 → 사례 박스 변환 도우미")
-        st.write("엑셀의 표 영역을 복사(Ctrl+C)해서 아래에 붙여넣으세요.")
-        excel_input = st.text_area("여기에 붙여넣기(Ctrl+V)", height=150)
+        excel_input = st.text_area("엑셀 내용 붙여넣기(Ctrl+V)")
         if excel_input:
-            lines = excel_input.strip().split('\n')
             md_table = ""
-            for line in lines:
-                cells = line.split('\t')
-                md_table += "| " + " | ".join(cells) + " |\n"
-            st.code(md_table, language="text")
-            if st.button("이 표 형식을 사례 박스에 즉시 적용하기"):
-                df.at[q_idx, 'case_box'] = md_table
-                st.success("적용되었습니다! '문제 내용' 탭에서 확인하세요.")
+            for line in excel_input.strip().split('\n'):
+                md_table += "| " + " | ".join(line.split('\t')) + " |\n"
+            st.code(md_table)
+            if st.button("사례 박스에 즉시 적용"):
+                df.at[q_idx, 'case_box'] = md_table; st.success("적용 완료!")
 
     if st.button("💾 이 문항 최종 저장하기", use_container_width=True):
         st.session_state.df = df
-        df.to_csv(DB_FILE, index=False)
-        st.success("저장 완료!")
-        st.rerun()
+        df.to_csv(DB_FILE, index=False); st.success("저장되었습니다!"); st.rerun()
+
+# ---------------------------------------------------------
+# 모드 3: 📊 성적 통계 센터 (부활!)
+# ---------------------------------------------------------
+else:
+    st.header("📊 시험 결과 분석 대시보드")
+    if os.path.exists(RESULT_FILE):
+        res_df = pd.read_csv(RESULT_FILE)
+        res_df['timestamp'] = pd.to_datetime(res_df['timestamp'])
+        
+        avg_score = res_df['score'].mean()
+        if len(res_df) >= 2:
+            diff = res_df.iloc[-1]['score'] - res_df.iloc[-2]['score']
+            diff_pct = (diff / res_df.iloc[-2]['score'] * 100) if res_df.iloc[-2]['score'] != 0 else 0
+        else: diff, diff_pct = 0, 0
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("총 응시 인원", f"{len(res_df)}명")
+        c2.metric("전체 평균 점수", f"{avg_score:.1f}점")
+        c3.metric("최근 시험 변화", f"{res_df.iloc[-1]['score']:.1f}점", f"{diff:+.1f} ({diff_pct:+.1f}%)")
+        
+        st.line_chart(res_df.set_index('timestamp')['score'])
+        st.dataframe(res_df.sort_values('timestamp', ascending=False), use_container_width=True)
+    else:
+        st.info("시험 결과 데이터가 아직 없습니다.")
+    
+    with st.expander("📝 테스트용 데이터 입력"):
+        t_score = st.number_input("입력할 점수", 0, 100, 80)
+        if st.button("기록 추가"):
+            new_res = pd.DataFrame([{"timestamp": datetime.now(), "score": t_score}])
+            new_res.to_csv(RESULT_FILE, mode='a', header=not os.path.exists(RESULT_FILE), index=False)
+            st.rerun()
