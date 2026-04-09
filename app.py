@@ -119,16 +119,38 @@ elif mode == "🛠️ 문항 관리":
             if o_f:
                 with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
                 all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
-    with t3:
-        excel_in = st.text_area("엑셀 붙여넣기")
+ with t3:
+        st.subheader("💡 엑셀 표 -> 사례박스 변환 도우미")
+        st.write("엑셀 내용을 붙여넣으면 마크다운 표로 변환해 드립니다. 변환 후 '사례 박스' 탭에서 자유롭게 추가 수정하세요!")
+        
+        # 1. 엑셀 데이터 입력창
+        excel_in = st.text_area("엑셀 데이터를 여기에 붙여넣으세요", height=150, help="엑셀에서 복사한 내용을 그대로 붙여넣으세요.")
+        
         if excel_in:
-            md = "".join(["| " + " | ".join(l.split('\t')) + " |\n" for l in excel_in.strip().split('\n')])
-            st.code(md)
-            if st.button("적용"): all_df.at[q_idx, 'case_box'] = md; st.success("적용됨")
-
-    if st.button("💾 저장하기", use_container_width=True):
-        all_df.to_csv(DB_FILE, index=False); st.success("저장 완료!"); st.rerun()
-
+            # 🌟 1차 변환 로직: 따옴표 청소 + 마크다운 규격 맞추기
+            raw_text = excel_in.replace('"', '').strip() # 엑셀 특유의 따옴표 제거
+            lines = raw_text.split('\n')
+            
+            if len(lines) > 0:
+                md_list = []
+                for i, line in enumerate(lines):
+                    cols = [c.strip() for c in line.split('\t')]
+                    md_list.append("| " + " | ".join(cols) + " |")
+                    if i == 0: # 표 헤더 구분선 자동 삽입
+                        md_list.append("| " + " | ".join(["---"] * len(cols)) + " |")
+                
+                md_result = "\n".join(md_list)
+                
+                # 2. 미리보기 (내가 작업한 결과가 어떤 표가 될지 확인)
+                st.info("▼ 아래와 같은 표로 변환됩니다.")
+                st.markdown(md_result)
+                
+                # 3. 사례 박스로 쏘기 버튼
+                if st.button("🚀 이 내용을 사례 박스로 보내기"):
+                    # 기존 사례 박스 내용을 덮어쓰거나, 뒤에 추가할 수 있습니다. 
+                    # 여기서는 1차 변환 결과물로 교체하도록 설정했습니다.
+                    all_df.at[q_idx, 'case_box'] = md_result
+                    st.success("사례 박스로 전송 완료! 이제 '📄 지문/이미지' 탭에서 나머지 수정을 진행하세요.")
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터
 # ---------------------------------------------------------
