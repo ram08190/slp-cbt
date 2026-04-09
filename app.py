@@ -17,13 +17,11 @@ IMAGE_DIR = "images"
 if not os.path.exists(IMAGE_DIR): 
     os.makedirs(IMAGE_DIR)
 
-# 🖼️ 이미지 로더 (D드라이브 경로 무시 + 깃허브 images 폴더에서 강제 호출)
+# 🖼️ 이미지 로더 (D드라이브 경로 세척 + Base64 변환)
 def get_image_data(img_path):
     if not img_path: return ""
-    # D:\사진\01.png:C -> 01.png 파일명만 추출
     file_name = str(img_path).replace("\\", "/").split('/')[-1].split(':')[0].strip()
     target_path = os.path.join(IMAGE_DIR, file_name)
-    
     if os.path.exists(target_path) and os.path.isfile(target_path):
         try:
             with open(target_path, "rb") as f:
@@ -35,7 +33,6 @@ def get_image_data(img_path):
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE, keep_default_na=False).astype(object)
-        # ID 순서대로 정렬
         if 'id' in df.columns:
             df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
             df = df.sort_values('id')
@@ -52,13 +49,15 @@ def clean_val(x):
 mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리", "📊 성적 통계 센터"])
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작 (복구 완료!)
+# 모드 1: 시험 시작 (TypeError 해결을 위한 경량화 버전)
 # ---------------------------------------------------------
 if mode == "📝 시험 시작":
     df = st.session_state.df
     if df.empty:
-        st.warning("데이터베이스(quiz_db.csv)가 비어있습니다.")
+        st.warning("데이터베이스가 비어있습니다.")
     else:
+        # 🌟 핵심: HTML에 '이미지 데이터'를 직접 넣지 않고 '경로'만 먼저 보냅니다.
+        # 이렇게 해야 HTML 용량이 작아져서 TypeError가 안 납니다.
         s1_list, s2_list = [], []
         for _, row in df.iterrows():
             try:
@@ -69,11 +68,12 @@ if mode == "📝 시험 시작":
                     "text": clean_val(row.get('question', '')),
                     "passage": clean_val(row.get('case_box', '')),
                     "answer": int(float(clean_val(row.get('answer', 1)) or 1)),
-                    "img": get_image_data(clean_val(row.get('img', ''))), # 지문 사진
+                    # 🌟 이미지 데이터를 미리 변환하지 않고 필요할 때 파이썬이 변환해줄 경로만 지정
+                    "img": get_image_data(clean_val(row.get('img', ''))),
                     "options": [
                         {"text": clean_val(row.get(f'option{i}', '')), "img": get_image_data(clean_val(row.get(f'opt_img{i}', '')))} 
                         for i in range(1, 6)
-                    ] # 보기 사진 포함
+                    ]
                 }
                 if real_id < 200: s1_list.append(q_obj)
                 else: s2_list.append(q_obj)
@@ -83,24 +83,24 @@ if mode == "📝 시험 시작":
             with open(HTML_FILE, "r", encoding="utf-8") as f:
                 base_html = f.read()
             
-            # 자바스크립트에 데이터 주입
             inject_code = f"""
             <script>
                 window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};
                 window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};
-                setTimeout(() => {{ if(window.render) window.render(); }}, 500);
+                setTimeout(() => {{ if(window.render) window.render(); }}, 300);
             </script>
             """
-            final_html = base_html.replace('</body>', f'{inject_code}</body>')
-            st.components.v1.html(final_html, height=1200, scrolling=True, key="cbt_viewer")
+            # final_html을 str로 확실하게 타입 변환하여 전달 (TypeError 방지)
+            final_html = str(base_html).replace('</body>', f'{inject_code}</body>')
+            st.components.v1.html(final_html, height=1200, scrolling=True, key="cbt_viewer_v3")
         else:
-            st.error("자동화.html 파일이 없습니다. 깃허브에 업로드했는지 확인해주세요.")
+            st.error("자동화.html 파일이 없습니다.")
 
 # ---------------------------------------------------------
 # 모드 2: 문항 관리 (실시간 편집기 포함)
 # ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
-    st.header("🛠️ 문항 관리 및 실시간 표 편집기")
+    st.header("🛠️ 문항 관리 시스템")
     all_df = st.session_state.df
     q_idx = st.selectbox("수정 문항 선택", all_df.index, format_func=lambda x: f"{all_df.loc[x, 'id']}번")
     
@@ -109,14 +109,14 @@ elif mode == "🛠️ 문항 관리":
     with t1:
         all_df.at[q_idx, 'subject'] = st.text_input("과목명", clean_val(all_df.loc[q_idx, 'subject']), key=f"s_{q_idx}")
         all_df.at[q_idx, 'question'] = st.text_area("문제 지문", clean_val(all_df.loc[q_idx, 'question']), key=f"q_{q_idx}")
-        all_df.at[q_idx, 'case_box'] = st.text_area("사례 박스 (수정됨)", clean_val(all_df.loc[q_idx, 'case_box']), key=f"c_{q_idx}", height=200)
-        m_f = st.file_uploader("메인 이미지 선택", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
+        all_df.at[q_idx, 'case_box'] = st.text_area("사례 박스", clean_val(all_df.loc[q_idx, 'case_box']), key=f"c_{q_idx}", height=200)
+        m_f = st.file_uploader("이미지 업로드", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
         if m_f:
             with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
             all_df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
 
     with t2:
-        all_df.at[q_idx, 'answer'] = st.number_input("정답(1-5)", 1, 5, int(float(clean_val(all_df.loc[q_idx, 'answer']) or 1)))
+        all_df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, int(float(clean_val(all_df.loc[q_idx, 'answer']) or 1)))
         for i in range(1, 6):
             all_df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o_{i}_{q_idx}")
 
@@ -145,7 +145,8 @@ elif mode == "🛠️ 문항 관리":
 
     if st.button("💾 최종 저장", use_container_width=True):
         all_df.to_csv(DB_FILE, index=False)
-        st.success("저장 완료!"); st.rerun()
+        st.success("저장 완료!")
+        st.rerun()
 
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터
@@ -156,4 +157,3 @@ else:
         rdf = pd.read_csv(RESULT_FILE)
         st.metric("총 응시 인원", f"{len(rdf)}명")
         st.line_chart(rdf['score'])
-    else: st.info("기록이 없습니다.")
