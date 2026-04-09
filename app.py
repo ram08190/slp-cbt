@@ -6,8 +6,7 @@ import base64
 from datetime import datetime
 
 # 1. 페이지 설정
-st.set_page_config(page_title="언어재활사 2급 통합 CBT", layout="wide")
-
+st.set_page_config(page_title="언어재활사 2급 통합 CBT", layout="wide")with t3:
 DB_FILE = "quiz_db.csv"
 RESULT_FILE = "results.csv"
 HTML_FILE = "자동화.html"
@@ -143,40 +142,53 @@ elif mode == "🛠️ 문항 관리":
                     f.write(o_f.getbuffer())
                 all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
-    with t3:
+   with t3:
         st.subheader("💡 엑셀 표 실시간 편집기")
         st.write("엑셀 내용을 붙여넣어 표를 만든 뒤, 아래 코드 창에서 직접 내용을 수정하며 결과를 확인하세요.")
         
         # 1. 엑셀 원본 붙여넣기 창
-        excel_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key="ex_input")
+        excel_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key="ex_input_box")
         
-        # 1차 변환 로직 (세션 상태를 활용해 초기값 설정)
-        if excel_in and 'last_ex' not in st.session_state or st.session_state.get('last_ex') != excel_in:
+        # 🌟 로직 개선: 엑셀 내용이 바뀌면 마크다운 코드를 자동으로 생성함
+        md_init_value = ""
+        if excel_in:
             raw_text = excel_in.replace('"', '').strip()
             lines = raw_text.split('\n')
             if len(lines) > 0:
                 md_list = []
                 for i, line in enumerate(lines):
+                    # 탭 또는 공백으로 분리
                     cols = [c.strip() for c in line.split('\t')]
                     md_list.append("| " + " | ".join(cols) + " |")
-                    if i == 0: md_list.append("| " + " | ".join(["---"] * len(cols)) + " |")
-                st.session_state.md_edit = "\n".join(md_list)
-                st.session_state.last_ex = excel_in
+                    if i == 0:
+                        md_list.append("| " + " | ".join(["---"] * len(cols)) + " |")
+                md_init_value = "\n".join(md_list)
 
-        # 2. 실시간 수정 창 (여기서 직접 글자를 고칠 수 있습니다!)
-        if 'md_edit' in st.session_state:
-            st.write("---")
-            st.write("2. 변환된 마크다운 코드를 직접 수정하세요:")
-            edited_md = st.text_area("마크다운 코드 수정", value=st.session_state.md_edit, height=200, key="md_editor")
-            
-            # 3. 실시간 결과 보기
-            st.write("▼ 현재 표 모양 (실시간 미리보기)")
+        st.write("---")
+        
+        # 2. 실시간 수정 창 (수정하는 즉시 아래 미리보기에 반영됨)
+        # help: 엑셀 내용을 먼저 넣어야 아래 창에 코드가 나타납니다.
+        edited_md = st.text_area(
+            "2. 변환된 마크다운 코드를 직접 수정하세요:", 
+            value=md_init_value, 
+            height=250, 
+            key="md_editor_box"
+        )
+        
+        # 3. 실시간 결과 보기 (편집창 내용을 그대로 렌더링)
+        st.write("▼ 현재 표 모양 (실시간 미리보기)")
+        if edited_md:
             st.markdown(edited_md)
+        else:
+            st.info("엑셀 내용을 먼저 붙여넣어 주세요.")
             
-            # 4. 최종 결정 버튼
-            if st.button("🚀 이 결과물을 사례 박스에 최종 적용"):
+        # 4. 최종 결정 버튼
+        if st.button("🚀 이 결과물을 사례 박스에 최종 적용", use_container_width=True):
+            if edited_md:
                 all_df.at[q_idx, 'case_box'] = edited_md
-                st.success("사례 박스에 적용되었습니다! '📄 문제 지문/이미지' 탭에서 확인하세요.")
+                st.success("사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인하세요.")
+            else:
+                st.warning("적용할 내용이 없습니다.")
 
     # 모든 탭 밖에서 공통 저장 버튼
     st.write("---")
