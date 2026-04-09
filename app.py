@@ -110,7 +110,7 @@ elif mode == "🛠️ 문항 관리":
             for i in range(1, 6):
                 all_df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o{i}_{sel_num}")
 
-        with tab3:
+with tab3:
             st.subheader("💡 엑셀 표 편집 및 정렬")
             ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key=f"ex_ar_{sel_num}")
             align_opt = st.selectbox("정렬 설정", ["왼쪽 (| --- |)", "가운데 (| :---: |)"], key=f"align_{sel_num}")
@@ -130,23 +130,39 @@ elif mode == "🛠️ 문항 관리":
                         cols = [c.strip() for c in l.split('\t')]
                         md_rows.append("| " + " | ".join(cols) + " |")
                         if i == 0: md_rows.append("| " + " | ".join([sep] * len(cols)) + " |")
+                    
                     st.session_state[f"temp_md_{sel_num}"] = "\n".join(md_rows)
                     st.rerun()
 
+            # 2. 마크다운 수정 창
             initial_md = st.session_state.get(f"temp_md_{sel_num}", clean_val(all_df.loc[q_idx, 'case_box']))
             final_md = st.text_area("2. 마크다운 수정", value=initial_md, height=200, key=f"edt_box_{sel_num}")
+            
+            # [중요] 사용자가 수정창에서 타이핑한 내용을 즉시 세션에 동기화
             st.session_state[f"temp_md_{sel_num}"] = final_md
+            
             st.markdown("---")
-            if final_md: st.markdown(final_md, unsafe_allow_html=True)
+            if final_md: 
+                st.markdown(final_md, unsafe_allow_html=True)
             
             if st.button("🚀 사례 박스 적용", key=f"btn_app_{sel_num}", use_container_width=True):
+                # 🌟 데이터프레임 양쪽에 즉시 강제 반영
                 all_df.at[q_idx, 'case_box'] = final_md
-                st.success("적용 완료!")
+                st.session_state.df.at[q_idx, 'case_box'] = final_md
+                st.success("✅ 사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인하세요.")
+                time.sleep(0.5)
+                st.rerun() # 변경사항 전파를 위해 리런
 
+    # 🌟 [매우 중요] 여기서부터는 탭(with tab3) 밖입니다. 
+    # 문항 관리 모드(elif mode == "🛠️ 문항 관리")가 끝나기 전 최종 저장 버튼 위치입니다.
     st.divider()
-    if st.button("💾 모든 수정사항 최종 저장", key="final_save_btn", use_container_width=True):
-        all_df.to_csv(DB_FILE, index=False); st.success("저장 완료!"); time.sleep(1); st.rerun()
-
+    if st.button("💾 모든 수정사항 최종 저장하기", key="final_save_all", use_container_width=True):
+        # 최종적으로 CSV 파일에 기록
+        all_df.to_csv(DB_FILE, index=False)
+        st.session_state.df = all_df
+        st.success("🎉 데이터베이스에 영구 저장되었습니다!")
+        time.sleep(1)
+        st.rerun()
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터 (데이터 보존 확인)
 # ---------------------------------------------------------
