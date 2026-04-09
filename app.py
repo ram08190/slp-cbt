@@ -83,7 +83,7 @@ elif mode == "🛠️ 문항 관리":
     st.header("🛠️ 문항 관리 시스템")
     all_df = st.session_state.df
     
-    # 1. 교시 및 번호 선택박스
+    # 1. 교시 및 번호 선택 (교시별 독립 번호 지원)
     c1, c2 = st.columns(2)
     with c1:
         sel_sess = st.selectbox("교시 선택", ["1교시 (1-80번)", "2교시 (1-70번)"], key="sess_select")
@@ -98,7 +98,7 @@ elif mode == "🛠️ 문항 관리":
     if not q_row.empty:
         q_idx = q_row.index[0]
         
-        # 탭 생성
+        # 🌟 탭 생성 (여기서부터 들여쓰기가 매우 중요합니다!)
         tab1, tab2, tab3 = st.tabs(["📄 지문/이미지", "🔢 보기/정답", "💡 엑셀 실시간 편집기"])
         
         with tab1:
@@ -107,7 +107,8 @@ elif mode == "🛠️ 문항 관리":
             all_df.at[q_idx, 'case_box'] = st.text_area("사례 박스", clean_val(all_df.loc[q_idx, 'case_box']), key=f"c_{sel_num}", height=200)
             m_f = st.file_uploader("이미지 업로드", type=['png','jpg','jpeg'], key=f"m_{sel_num}")
             if m_f:
-                with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
+                with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f:
+                    f.write(m_f.getbuffer())
                 all_df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
         
         with tab2:
@@ -117,20 +118,18 @@ elif mode == "🛠️ 문항 관리":
                 all_df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o{i}_{sel_num}")
                 o_f = col_i.file_uploader(f"사진{i}", type=['png','jpg'], key=f"oi{i}_{sel_num}")
                 if o_f:
-                    with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
+                    with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f:
+                        f.write(o_f.getbuffer())
                     all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
-     with tab3:
+        with tab3:
             st.subheader("💡 엑셀 실시간 편집기 (Alt+Enter 대응)")
-            
-            # 1. 엑셀 붙여넣기 창
             ex_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key=f"ex_input_{sel_num}")
             
-            # 🌟 [로직 변경] 2번 창의 내용을 세션 상태(session_state)로 직접 관리합니다.
+            # 세션 상태로 실시간 마크다운 관리
             if f"md_content_{sel_num}" not in st.session_state:
                 st.session_state[f"md_content_{sel_num}"] = clean_val(all_df.loc[q_idx, 'case_box'])
 
-            # 1번 창에 입력이 들어오면 즉시 변환해서 세션에 저장
             if ex_in:
                 raw = ex_in.strip()
                 processed_text = ""
@@ -151,19 +150,14 @@ elif mode == "🛠️ 문항 관리":
                     md_rows.append("| " + " | ".join(cols) + " |")
                     if i == 0:
                         md_rows.append("| " + " | ".join(["---"] * len(cols)) + " |")
-                
-                # 변환된 결과를 세션에 강제 주입
                 st.session_state[f"md_content_{sel_num}"] = "\n".join(md_rows)
 
-            # 2. 실시간 수정창 (세션 상태와 연결)
             final_md = st.text_area(
                 "2. 마크다운 수정 (여기서 고치면 아래 실시간 반영)", 
                 value=st.session_state[f"md_content_{sel_num}"], 
                 height=250, 
                 key=f"edt_area_{sel_num}"
             )
-            
-            # 사용자가 2번 창에서 직접 수정한 경우 세션 상태 업데이트
             st.session_state[f"md_content_{sel_num}"] = final_md
             
             st.markdown("---")
@@ -173,13 +167,15 @@ elif mode == "🛠️ 문항 관리":
             
             if st.button("🚀 이 표를 사례 박스에 적용", use_container_width=True):
                 all_df.at[q_idx, 'case_box'] = st.session_state[f"md_content_{sel_num}"]
-                st.success("사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인하세요.")
+                st.success("사례 박스에 적용되었습니다!")
 
-    # 모든 탭 영역 밖 (모든 수정이 끝난 후 최종 저장)
+    # 🌟 모든 탭 밖에서 최종 저장 (들여쓰기 확인 필수)
     st.divider()
     if st.button("💾 모든 수정사항 최종 저장하기", use_container_width=True):
         all_df.to_csv(DB_FILE, index=False)
-        st.success("저장 완료!"); time.sleep(1); st.rerun()
+        st.success("전체 데이터가 성공적으로 저장되었습니다!")
+        time.sleep(1)
+        st.rerun()
 
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터
