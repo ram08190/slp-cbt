@@ -1,41 +1,25 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import json
 import os
-import base64
+import re
 import time
-from datetime import datetime
 
 # 1. 페이지 설정
 st.set_page_config(page_title="언어재활사 2급 통합 CBT", layout="wide")
 
-DB_FILE = "quiz_db.csv"
-RESULT_FILE = "results.csv"  # 👈 통계 데이터가 저장되는 곳 (이 파일만 있으면 데이터 유지됨)
+# 🌟 구글 시트 연결 설정 (Secrets에 등록된 정보를 사용)
+conn = st.connection("gsheets", type=GSheetsConnection)
+
 HTML_FILE = "자동화.html"
-IMAGE_DIR = "images"
-
-if not os.path.exists(IMAGE_DIR): 
-    os.makedirs(IMAGE_DIR)
-
-# 🖼️ 이미지 출력 해결 (Base64 로더)
-def get_image_data(img_path):
-    if not img_path: return ""
-    file_name = str(img_path).replace("\\", "/").split('/')[-1].split(':')[0].strip()
-    target_path = os.path.join(IMAGE_DIR, file_name)
-    if os.path.exists(target_path) and os.path.isfile(target_path):
-        try:
-            with open(target_path, "rb") as f:
-                encoded = base64.b64encode(f.read()).decode('utf-8')
-                return f"data:image/png;base64,{encoded}"
-        except: return ""
-    return ""
 
 def load_data():
-    if os.path.exists(DB_FILE):
-        df = pd.read_csv(DB_FILE, keep_default_na=False).astype(object)
-        df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
-        return df.sort_values('id').reset_index(drop=True)
-    return pd.DataFrame()
+    # 구글 시트에서 최신 데이터를 실시간으로 읽어옴
+    df = conn.read(ttl=0)
+    # ID를 숫자로 변환
+    df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
+    return df.sort_values('id').reset_index(drop=True)
 
 if 'df' not in st.session_state: 
     st.session_state.df = load_data()
@@ -43,6 +27,17 @@ if 'df' not in st.session_state:
 def clean_val(x):
     s = str(x).strip().replace('"', '')
     return "" if s.lower() in ['nan', 'none', ''] else s
+
+# 🖼️ 구글 드라이브 공유 링크를 이미지 주소로 자동 변환하는 함수
+def get_display_image(url):
+    if not url or "http" not in str(url): return ""
+    # 구글 드라이브 링크인 경우 직링크로 변환
+    if "drive.google.com" in url:
+        match = re.search(r'file/d/(.*?)/', url)
+        if match:
+            file_id = match.group(1)
+            return f"https://drive.google.com/uc?export=view&id={file_id}"
+    return url # 일반 URL인 경우 그대로 반환
 
 mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리", "📊 성적 통계 센터"])
 
@@ -61,8 +56,13 @@ if mode == "📝 시험 시작":
                 "text": clean_val(row.get('question', '')),
                 "passage": clean_val(row.get('case_box', '')),
                 "answer": int(float(clean_val(row.get('answer', 1)) or 1)),
-                "img": get_image_data(clean_val(row.get('img', ''))),
-                "options": [{"text": clean_val(row.get(f'option{i}', '')), "img": get_image_data(clean_val(row.get(f'opt_img{i}', '')))} for i in range(1, 6)]
+                # 🌟 이미지 링크 처리
+                "img": get_display_image(clean_val(row.get('img', ''))),
+                "options": [
+                    {"text": clean_val(row.get(f'option{i}', '')), 
+                     "img": get_display_image(clean_val(row.get(f'opt_img{i}', '')))} 
+                    for i in range(1, 6)
+                ]
             }
             if 100 < rid < 200: s1_list.append(q_obj)
             elif rid > 200: s2_list.append(q_obj)
@@ -79,7 +79,7 @@ if mode == "📝 시험 시작":
 # 모드 2: 문항 관리
 # ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
-    st.header("🛠️ 문항 관리 시스템")
+    st.header("🛠️ 문항 관리 (Google Sheets 연동)")
     all_df = st.session_state.df
     
     c1, c2 = st.columns(2)
@@ -100,10 +100,18 @@ elif mode == "🛠️ 문항 관리":
             all_df.at[q_idx, 'subject'] = st.text_input("과목명", clean_val(all_df.loc[q_idx, 'subject']), key=f"s_in_{sel_num}")
             all_df.at[q_idx, 'question'] = st.text_area("문제 지문", clean_val(all_df.loc[q_idx, 'question']), key=f"q_in_{sel_num}")
             all_df.at[q_idx, 'case_box'] = st.text_area("사례 박스", clean_val(all_df.loc[q_idx, 'case_box']), key=f"c_in_{sel_num}", height=200)
-            m_f = st.file_uploader("이미지 업로드", type=['png','jpg','jpeg'], key=f"m_up_{sel_num}")
-            if m_f:
-                with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
-                all_df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
+            
+            # 🖼️ 이미지 링크 관리
+            st.divider()
+            st.write("🖼️ 이미지 관리")
+            img_val = clean_val(all_df.loc[q_idx, 'img'])
+            new_img = st.text_input("이미지 주소 (구글 드라이브 공유 링크)", value=img_val, key=f"img_in_{sel_num}")
+            all_df.at[q_idx, 'img'] = new_img
+            
+            display_url = get_display_image(new_img)
+            if display_url:
+                st.image(display_url, caption="미리보기", width=300)
+                st.caption(f"이미지 소스: {display_url}")
         
         with tab2:
             all_df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, int(float(clean_val(all_df.loc[q_idx, 'answer']) or 1)), key=f"ans_{sel_num}")
@@ -130,57 +138,38 @@ elif mode == "🛠️ 문항 관리":
                         cols = [c.strip() for c in l.split('\t')]
                         md_rows.append("| " + " | ".join(cols) + " |")
                         if i == 0: md_rows.append("| " + " | ".join([sep] * len(cols)) + " |")
-                    
                     st.session_state[f"temp_md_{sel_num}"] = "\n".join(md_rows)
                     st.rerun()
 
-            # 2. 마크다운 수정 창
             initial_md = st.session_state.get(f"temp_md_{sel_num}", clean_val(all_df.loc[q_idx, 'case_box']))
             final_md = st.text_area("2. 마크다운 수정", value=initial_md, height=200, key=f"edt_box_{sel_num}")
-            
-            # [중요] 사용자가 수정창에서 타이핑한 내용을 즉시 세션에 동기화
             st.session_state[f"temp_md_{sel_num}"] = final_md
             
             st.markdown("---")
-            if final_md: 
-                st.markdown(final_md, unsafe_allow_html=True)
+            if final_md: st.markdown(final_md, unsafe_allow_html=True)
             
             if st.button("🚀 사례 박스 적용", key=f"btn_app_{sel_num}", use_container_width=True):
-                # 🌟 데이터프레임 양쪽에 즉시 강제 반영
                 all_df.at[q_idx, 'case_box'] = final_md
                 st.session_state.df.at[q_idx, 'case_box'] = final_md
-                st.success("✅ 사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인하세요.")
+                st.success("✅ 사례 박스에 반영되었습니다.")
                 time.sleep(0.5)
-                st.rerun() # 변경사항 전파를 위해 리런
+                st.rerun()
 
-    # 🌟 [매우 중요] 여기서부터는 탭(with tab3) 밖입니다. 
-    # 문항 관리 모드(elif mode == "🛠️ 문항 관리")가 끝나기 전 최종 저장 버튼 위치입니다.
     st.divider()
-    if st.button("💾 모든 수정사항 최종 저장하기", key="final_save_all", use_container_width=True):
-        # 최종적으로 CSV 파일에 기록
-        all_df.to_csv(DB_FILE, index=False)
-        st.session_state.df = all_df
-        st.success("🎉 데이터베이스에 영구 저장되었습니다!")
-        time.sleep(1)
-        st.rerun()
+    if st.button("💾 모든 수정사항 구글 시트에 영구 저장하기", key="final_save_gs", use_container_width=True):
+        try:
+            # 구글 시트 업데이트
+            conn.update(data=all_df)
+            st.session_state.df = all_df
+            st.success("🎉 구글 스프레드시트에 영구 저장되었습니다!")
+            time.sleep(1)
+            st.rerun()
+        except Exception as e:
+            st.error(f"저장 실패: {e}")
+
 # ---------------------------------------------------------
-# 모드 3: 성적 통계 센터 (데이터 보존 확인)
+# 모드 3: 성적 통계 센터
 # ---------------------------------------------------------
 else:
     st.header("📊 성적 통계 센터")
-    if os.path.exists(RESULT_FILE):
-        rdf = pd.read_csv(RESULT_FILE)
-        st.subheader("📈 응시 결과 요약")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("총 응시 횟수", f"{len(rdf)}회")
-        c2.metric("평균 점수", f"{rdf['score'].mean():.1f}점")
-        c3.metric("최고 점수", f"{rdf['score'].max()}점")
-        
-        st.write("---")
-        st.write("▼ 점수 변화 추이")
-        st.line_chart(rdf['score'])
-        
-        st.write("▼ 최근 기록 리스트")
-        st.dataframe(rdf.sort_values(by=rdf.columns[0], ascending=False))
-    else:
-        st.info("아직 저장된 시험 결과(results.csv)가 없습니다. 시험을 마친 후 통계가 생성됩니다.")
+    st.info("성적 데이터는 브라우저 혹은 별도 DB 설정을 통해 관리됩니다.")
