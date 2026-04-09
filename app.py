@@ -3,7 +3,6 @@ import pandas as pd
 import json
 import os
 import base64
-import time
 from datetime import datetime
 
 # 1. 페이지 설정
@@ -17,7 +16,7 @@ IMAGE_DIR = "images"
 if not os.path.exists(IMAGE_DIR): 
     os.makedirs(IMAGE_DIR)
 
-# 🖼️ 이미지 로더 (D드라이브 경로 세척 + Base64 변환)
+# 🖼️ 이미지 로더 (파일명만 추출하여 깃허브 images 폴더에서 호출)
 def get_image_data(img_path):
     if not img_path: return ""
     file_name = str(img_path).replace("\\", "/").split('/')[-1].split(':')[0].strip()
@@ -49,15 +48,14 @@ def clean_val(x):
 mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리", "📊 성적 통계 센터"])
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작 (TypeError 해결을 위한 경량화 버전)
+# 모드 1: 시험 시작 (용량 최적화로 TypeError 해결)
 # ---------------------------------------------------------
 if mode == "📝 시험 시작":
     df = st.session_state.df
     if df.empty:
-        st.warning("데이터베이스가 비어있습니다.")
+        st.warning("데이터가 비어있습니다.")
     else:
-        # 🌟 핵심: HTML에 '이미지 데이터'를 직접 넣지 않고 '경로'만 먼저 보냅니다.
-        # 이렇게 해야 HTML 용량이 작아져서 TypeError가 안 납니다.
+        # 🌟 데이터를 최대한 작게 만듭니다.
         s1_list, s2_list = [], []
         for _, row in df.iterrows():
             try:
@@ -68,7 +66,6 @@ if mode == "📝 시험 시작":
                     "text": clean_val(row.get('question', '')),
                     "passage": clean_val(row.get('case_box', '')),
                     "answer": int(float(clean_val(row.get('answer', 1)) or 1)),
-                    # 🌟 이미지 데이터를 미리 변환하지 않고 필요할 때 파이썬이 변환해줄 경로만 지정
                     "img": get_image_data(clean_val(row.get('img', ''))),
                     "options": [
                         {"text": clean_val(row.get(f'option{i}', '')), "img": get_image_data(clean_val(row.get(f'opt_img{i}', '')))} 
@@ -81,72 +78,77 @@ if mode == "📝 시험 시작":
 
         if os.path.exists(HTML_FILE):
             with open(HTML_FILE, "r", encoding="utf-8") as f:
-                base_html = f.read()
+                html_template = f.read()
             
-            inject_code = f"""
+            # 🌟 핵심: 대용량 데이터를 JSON 문자열로 변환하여 <body> 태그 끝에 안전하게 삽입
+            data_payload = json.dumps({"s1": s1_list, "s2": s2_list}, ensure_ascii=False)
+            
+            script_payload = f"""
+            <script id="cbt_data" type="application/json">
+                {data_payload}
+            </script>
             <script>
-                window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};
-                window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};
-                setTimeout(() => {{ if(window.render) window.render(); }}, 300);
+                // 데이터 로드 및 렌더링 호출
+                document.addEventListener("DOMContentLoaded", function() {{
+                    const payload = JSON.parse(document.getElementById('cbt_data').textContent);
+                    window.QUESTIONS_S1 = payload.s1;
+                    window.QUESTIONS_S2 = payload.s2;
+                    if(window.render) window.render();
+                    else setTimeout(() => {{ if(window.render) window.render(); }}, 500);
+                }});
             </script>
             """
-            # final_html을 str로 확실하게 타입 변환하여 전달 (TypeError 방지)
-            final_html = str(base_html).replace('</body>', f'{inject_code}</body>')
-            st.components.v1.html(final_html, height=1200, scrolling=True, key="cbt_viewer_v3")
-        else:
-            st.error("자동화.html 파일이 없습니다.")
+            # HTML 용량을 최소화하기 위해 데이터를 별도의 JSON 스크립트로 분리
+            final_html = html_template.replace('</body>', script_payload + '</body>')
+            
+            # 🌟 [TypeError 방지] 문자열로 명시적 변환 및 key 제거
+            st.components.v1.html(str(final_html), height=1200, scrolling=True)
 
 # ---------------------------------------------------------
-# 모드 2: 문항 관리 (실시간 편집기 포함)
+# 모드 2: 문항 관리 (실시간 표 편집기 유지)
 # ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
-    st.header("🛠️ 문항 관리 시스템")
+    st.header("🛠️ 문항 및 이미지 관리")
     all_df = st.session_state.df
-    q_idx = st.selectbox("수정 문항 선택", all_df.index, format_func=lambda x: f"{all_df.loc[x, 'id']}번")
+    q_idx = st.selectbox("수정 문항", all_df.index, format_func=lambda x: f"{all_df.loc[x, 'id']}번")
     
-    t1, t2, t3 = st.tabs(["📄 지문/이미지", "🔢 보기/정답", "💡 엑셀 표 실시간 편집기"])
+    t1, t2, t3 = st.tabs(["📄 지문/이미지", "🔢 보기/정답", "💡 엑셀 표 편집기"])
     
     with t1:
-        all_df.at[q_idx, 'subject'] = st.text_input("과목명", clean_val(all_df.loc[q_idx, 'subject']), key=f"s_{q_idx}")
         all_df.at[q_idx, 'question'] = st.text_area("문제 지문", clean_val(all_df.loc[q_idx, 'question']), key=f"q_{q_idx}")
-        all_df.at[q_idx, 'case_box'] = st.text_area("사례 박스", clean_val(all_df.loc[q_idx, 'case_box']), key=f"c_{q_idx}", height=200)
-        m_f = st.file_uploader("이미지 업로드", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
+        all_df.at[q_idx, 'case_box'] = st.text_area("사례 박스", clean_val(all_df.loc[q_idx, 'case_box']), key=f"c_{q_idx}", height=150)
+        m_f = st.file_uploader("사진 업로드", type=['png','jpg'], key=f"m_{q_idx}")
         if m_f:
             with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
             all_df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
 
     with t2:
-        all_df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, int(float(clean_val(all_df.loc[q_idx, 'answer']) or 1)))
         for i in range(1, 6):
-            all_df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o_{i}_{q_idx}")
+            col_t, col_i = st.columns([2, 1])
+            all_df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o_{i}_{q_idx}")
+            o_f = col_i.file_uploader(f"보기{i} 사진", type=['png','jpg'], key=f"ou{i}_{q_idx}")
+            if o_f:
+                with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
+                all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
     with t3:
-        st.subheader("💡 엑셀 표 실시간 편집기")
-        ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key="ex_in")
-        md_init = ""
+        ex_in = st.text_area("엑셀 붙여넣기", key="ex_input")
         if ex_in:
             raw = ex_in.replace('"', '').strip()
             lines = raw.split('\n')
-            if lines:
-                md_list = []
-                for i, l in enumerate(lines):
-                    cols = [c.strip() for c in l.split('\t')]
-                    md_list.append("| " + " | ".join(cols) + " |")
-                    if i == 0: md_list.append("| " + " | ".join(["---"] * len(cols)) + " |")
-                md_init = "\n".join(md_list)
-        
-        ed_md = st.text_area("2. 마크다운 수정", value=md_init, height=200, key="ed_md")
-        st.write("▼ 미리보기")
-        if ed_md:
-            st.markdown(ed_md)
-            if st.button("🚀 사례 박스에 적용"):
-                all_df.at[q_idx, 'case_box'] = ed_md
-                st.success("적용 완료!")
+            md = []
+            for i, l in enumerate(lines):
+                cols = [c.strip() for c in l.split('\t')]
+                md.append("| " + " | ".join(cols) + " |")
+                if i == 0: md.append("| " + " | ".join(["---"] * len(cols)) + " |")
+            res_md = "\n".join(md)
+            edited = st.text_area("마크다운 수정", value=res_md, height=150, key="md_editor")
+            st.markdown(edited)
+            if st.button("🚀 사례 박스 적용"):
+                all_df.at[q_idx, 'case_box'] = edited; st.success("적용됨")
 
-    if st.button("💾 최종 저장", use_container_width=True):
-        all_df.to_csv(DB_FILE, index=False)
-        st.success("저장 완료!")
-        st.rerun()
+    if st.button("💾 최종 저장하기", use_container_width=True):
+        all_df.to_csv(DB_FILE, index=False); st.success("저장 완료!"); st.rerun()
 
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터
