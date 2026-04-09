@@ -117,31 +117,45 @@ elif mode == "🛠️ 문항 관리":
                     with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
                     all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
-        with tab3:
-            st.subheader("💡 엑셀 실시간 편집기")
+       with tab3:
+            st.subheader("💡 엑셀 실시간 편집기 (줄바꿈 자동 대응)")
+            st.info("엑셀 셀 안의 줄바꿈(Alt+Enter)도 자동으로 인식하여 예쁘게 바꿔줍니다.")
             ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key=f"ex_{sel_num}")
             
-            # 실시간 변환 로직
+            # 실시간 변환 로직 보강
             md_init = clean_val(all_df.loc[q_idx, 'case_box'])
             if ex_in:
-                lines = ex_in.replace('"', '').strip().split('\n')
+                # 🌟 [핵심] 엑셀 줄바꿈 데이터 처리 로직
+                # 엑셀 복사 시 셀 내부 줄바꿈은 따옴표(")로 감싸진 채 들어오므로 이를 정제합니다.
+                raw = ex_in.strip()
+                
+                # 큰따옴표 내부에 있는 실제 줄바꿈을 <br>로 치환하는 로직
+                if '"' in raw:
+                    import re
+                    # 큰따옴표 안의 줄바꿈만 찾아서 <br>로 변경
+                    def replace_br(m):
+                        return m.group(0).replace('\n', '<br>').replace('"', '')
+                    raw = re.sub(r'\"(.+?)\"', replace_br, raw, flags=re.DOTALL)
+
+                lines = raw.split('\n')
                 md_rows = []
                 for i, l in enumerate(lines):
+                    if not l.strip(): continue # 빈 줄 건너뛰기
                     cols = [c.strip() for c in l.split('\t')]
                     md_rows.append("| " + " | ".join(cols) + " |")
-                    if i == 0: md_rows.append("| " + " | ".join(["---"] * len(cols)) + " |")
+                    if i == 0: 
+                        md_rows.append("| " + " | ".join(["---"] * len(cols)) + " |")
                 md_init = "\n".join(md_rows)
 
-            # 🌟 2번 수정창: 여기서 고치면 아래 미리보기가 즉시 반영됨
-            final_md = st.text_area("2. 마크다운 수정 (실시간 확인용)", value=md_init, height=200, key=f"edt_{sel_num}")
+            # 2. 실시간 수정창
+            final_md = st.text_area("2. 마크다운 수정 (실시간 확인)", value=md_init, height=200, key=f"edt_{sel_num}")
             st.markdown("---")
-            st.markdown(final_md) # 실시간 미리보기
+            st.write("▼ 실시간 미리보기")
+            st.markdown(final_md, unsafe_allow_html=True) # <br> 태그 허용
+            
             if st.button("🚀 이 표를 사례 박스에 적용"):
                 all_df.at[q_idx, 'case_box'] = final_md
-                st.success("적용되었습니다!")
-
-        if st.button("💾 최종 저장하기", use_container_width=True):
-            all_df.to_csv(DB_FILE, index=False); st.success("저장 완료!"); time.sleep(1); st.rerun()
+                st.success("적용되었습니다! '지문/이미지' 탭에서 확인하세요.")
 
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터
