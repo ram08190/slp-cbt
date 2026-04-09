@@ -144,32 +144,39 @@ elif mode == "🛠️ 문항 관리":
                 all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
     with t3:
-        st.subheader("💡 엑셀 표 -> 사례박스 1차 변환기")
-        st.write("엑셀 내용을 붙여넣으면 마크다운 표로 변환하여 '사례 박스'로 보내드립니다.")
+        st.subheader("💡 엑셀 표 실시간 편집기")
+        st.write("엑셀 내용을 붙여넣어 표를 만든 뒤, 아래 코드 창에서 직접 내용을 수정하며 결과를 확인하세요.")
         
-        excel_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=150)
+        # 1. 엑셀 원본 붙여넣기 창
+        excel_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key="ex_input")
         
-        if excel_in:
-            # 따옴표 제거 및 데이터 정리
+        # 1차 변환 로직 (세션 상태를 활용해 초기값 설정)
+        if excel_in and 'last_ex' not in st.session_state or st.session_state.get('last_ex') != excel_in:
             raw_text = excel_in.replace('"', '').strip()
             lines = raw_text.split('\n')
-            
             if len(lines) > 0:
                 md_list = []
                 for i, line in enumerate(lines):
                     cols = [c.strip() for c in line.split('\t')]
                     md_list.append("| " + " | ".join(cols) + " |")
-                    if i == 0: # 헤더 구분선 추가
-                        md_list.append("| " + " | ".join(["---"] * len(cols)) + " |")
-                
-                md_result = "\n".join(md_list)
-                
-                st.info("▼ 변환 결과 미리보기")
-                st.markdown(md_result)
-                
-                if st.button("🚀 이 표를 사례 박스로 보내기"):
-                    all_df.at[q_idx, 'case_box'] = md_result
-                    st.success("전송 완료! '📄 문제 지문/이미지' 탭의 사례 박스에서 내용을 확인하고 추가 수정하세요.")
+                    if i == 0: md_list.append("| " + " | ".join(["---"] * len(cols)) + " |")
+                st.session_state.md_edit = "\n".join(md_list)
+                st.session_state.last_ex = excel_in
+
+        # 2. 실시간 수정 창 (여기서 직접 글자를 고칠 수 있습니다!)
+        if 'md_edit' in st.session_state:
+            st.write("---")
+            st.write("2. 변환된 마크다운 코드를 직접 수정하세요:")
+            edited_md = st.text_area("마크다운 코드 수정", value=st.session_state.md_edit, height=200, key="md_editor")
+            
+            # 3. 실시간 결과 보기
+            st.write("▼ 현재 표 모양 (실시간 미리보기)")
+            st.markdown(edited_md)
+            
+            # 4. 최종 결정 버튼
+            if st.button("🚀 이 결과물을 사례 박스에 최종 적용"):
+                all_df.at[q_idx, 'case_box'] = edited_md
+                st.success("사례 박스에 적용되었습니다! '📄 문제 지문/이미지' 탭에서 확인하세요.")
 
     # 모든 탭 밖에서 공통 저장 버튼
     st.write("---")
