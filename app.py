@@ -120,13 +120,17 @@ elif mode == "🛠️ 문항 관리":
                     with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
                     all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
-        with tab3:
+     with tab3:
             st.subheader("💡 엑셀 실시간 편집기 (Alt+Enter 대응)")
-            st.info("엑셀 셀 내부 줄바꿈을 <br> 태그로 자동 변환합니다.")
             
-            ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key=f"ex_input_{sel_num}")
+            # 1. 엑셀 붙여넣기 창
+            ex_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key=f"ex_input_{sel_num}")
             
-            md_init = ""
+            # 🌟 [로직 변경] 2번 창의 내용을 세션 상태(session_state)로 직접 관리합니다.
+            if f"md_content_{sel_num}" not in st.session_state:
+                st.session_state[f"md_content_{sel_num}"] = clean_val(all_df.loc[q_idx, 'case_box'])
+
+            # 1번 창에 입력이 들어오면 즉시 변환해서 세션에 저장
             if ex_in:
                 raw = ex_in.strip()
                 processed_text = ""
@@ -147,21 +151,29 @@ elif mode == "🛠️ 문항 관리":
                     md_rows.append("| " + " | ".join(cols) + " |")
                     if i == 0:
                         md_rows.append("| " + " | ".join(["---"] * len(cols)) + " |")
-                md_init = "\n".join(md_rows)
-            else:
-                md_init = clean_val(all_df.loc[q_idx, 'case_box'])
+                
+                # 변환된 결과를 세션에 강제 주입
+                st.session_state[f"md_content_{sel_num}"] = "\n".join(md_rows)
 
-            final_md = st.text_area("2. 마크다운 수정 (실시간 확인)", value=md_init, height=250, key=f"edt_area_{sel_num}")
+            # 2. 실시간 수정창 (세션 상태와 연결)
+            final_md = st.text_area(
+                "2. 마크다운 수정 (여기서 고치면 아래 실시간 반영)", 
+                value=st.session_state[f"md_content_{sel_num}"], 
+                height=250, 
+                key=f"edt_area_{sel_num}"
+            )
+            
+            # 사용자가 2번 창에서 직접 수정한 경우 세션 상태 업데이트
+            st.session_state[f"md_content_{sel_num}"] = final_md
             
             st.markdown("---")
             st.write("▼ 실시간 미리보기")
-            if final_md:
-                st.markdown(final_md, unsafe_allow_html=True)
+            if st.session_state[f"md_content_{sel_num}"]:
+                st.markdown(st.session_state[f"md_content_{sel_num}"], unsafe_allow_html=True)
             
             if st.button("🚀 이 표를 사례 박스에 적용", use_container_width=True):
-                if final_md:
-                    all_df.at[q_idx, 'case_box'] = final_md
-                    st.success("사례 박스에 적용되었습니다!")
+                all_df.at[q_idx, 'case_box'] = st.session_state[f"md_content_{sel_num}"]
+                st.success("사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인하세요.")
 
     # 모든 탭 영역 밖 (모든 수정이 끝난 후 최종 저장)
     st.divider()
