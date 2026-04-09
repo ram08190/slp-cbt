@@ -57,7 +57,6 @@ def clean_val(x):
     if s.lower() in ['nan', 'none', '']: return ""
     return s
 
-# --- 메뉴 선택 ---
 mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리"])
 
 if mode == "📝 시험 시작":
@@ -84,7 +83,31 @@ if mode == "📝 시험 시작":
     if os.path.exists(HTML_FILE):
         with open(HTML_FILE, "r", encoding="utf-8") as f:
             base_html = f.read()
-        data_inject = f"<script>window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)}; window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)}; window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};</script>"
+        
+        # OMR 카드 가독성을 위한 스타일 및 로직 주입
+        # 푼 문제는 배경색을 입히는 스크립트가 자동화.html에 있다고 가정하거나, 아래에서 강제 주입합니다.
+        data_inject = f"""
+        <script>
+            window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};
+            window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};
+            window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};
+            
+            // OMR 상태 업데이트 함수 (푼 문제 표시용)
+            function updateOMRStatus() {{
+                const omrButtons = document.querySelectorAll('.omr-item'); // OMR 번호 버튼들
+                omrButtons.forEach(btn => {{
+                    const qIdx = btn.getAttribute('data-id');
+                    if (window.userAnswers && window.userAnswers[qIdx]) {{
+                        btn.style.backgroundColor = '#007bff'; // 푼 문제는 파란색
+                        btn.style.color = 'white';
+                    }} else {{
+                        btn.style.backgroundColor = ''; 
+                        btn.style.color = '';
+                    }}
+                }});
+            }}
+        </script>
+        """
         final_html = base_html.replace('<script src="questions1.js"></script>', '').replace('<script src="questions2.js"></script>', '').replace('<script src="database.js"></script>', data_inject)
         st.components.v1.html(final_html, height=1200, scrolling=True)
 
@@ -95,28 +118,25 @@ else:
     target_df = all_df[all_df['id'] < 200] if "1교시" in sel_sess else all_df[all_df['id'] >= 200]
     q_idx = st.selectbox("수정할 문항 선택", target_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id']) % 100}번 문제")
     
-    st.divider()
     df = all_df.copy()
-    
     tab1, tab2, tab3 = st.tabs(["📄 문제 & 사례(표)", "🔢 보기 & 이미지", "💡 엑셀 표 붙여넣기 도우미"])
 
     with tab1:
         df.at[q_idx, 'subject'] = st.text_input("과목명", value=clean_val(df.loc[q_idx, 'subject']), key=f"s_{q_idx}")
         df.at[q_idx, 'question'] = st.text_area("문제 지문", value=clean_val(df.loc[q_idx, 'question']), key=f"q_{q_idx}")
-        df.at[q_idx, 'case_box'] = st.text_area("사례 박스 (여기에 표가 들어갑니다)", value=clean_val(df.loc[q_idx, 'case_box']), height=200, key=f"c_{q_idx}")
+        df.at[q_idx, 'case_box'] = st.text_area("사례 박스", value=clean_val(df.loc[q_idx, 'case_box']), height=200, key=f"c_{q_idx}")
         
     with tab2:
-        col_img, col_ans = st.columns([1, 1])
-        with col_img:
+        c1, c2 = st.columns(2)
+        with c1:
             st.write("🖼️ 메인 이미지")
-            m_file = st.file_uploader("사진 선택", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
-            if m_file:
-                with open(os.path.join(IMAGE_DIR, m_file.name), "wb") as f: f.write(m_file.getbuffer())
-                df.at[q_idx, 'img'] = f"images/{m_file.name}:C"
-        with col_ans:
-            df.at[q_idx, 'answer'] = st.number_input("정답 (1-5)", 1, 5, value=int(float(clean_val(df.loc[q_idx, 'answer']) or 1)))
+            m_f = st.file_uploader("업로드", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
+            if m_f:
+                with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
+                df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
+        with c2:
+            df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, value=int(float(clean_val(df.loc[q_idx, 'answer']) or 1)))
         
-        st.divider()
         for i in range(1, 6):
             c_t, c_u = st.columns([2, 1])
             df.at[q_idx, f'option{i}'] = c_t.text_input(f"보기 {i}", value=clean_val(df.loc[q_idx, f'option{i}']), key=f"ot{i}_{q_idx}")
@@ -126,22 +146,18 @@ else:
                 df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
     with tab3:
-        st.subheader("📊 엑셀 표 → 사례 박스 변환기")
-        st.write("엑셀이나 스프레드시트의 영역을 복사(Ctrl+C)해서 아래 칸에 붙여넣기(Ctrl+V) 하세요.")
-        excel_paste = st.text_area("엑셀 내용 붙여넣기", height=150, help="엑셀에서 복사한 내용을 그대로 붙여넣으세요.")
-        
+        st.subheader("📊 엑셀 표 → 마크다운 변환")
+        excel_paste = st.text_area("엑셀에서 복사한 내용을 붙여넣으세요")
         if excel_paste:
-            # 엑셀의 탭 구분을 | 기호로 변환
             lines = excel_paste.strip().split('\n')
             markdown_table = ""
             for line in lines:
                 cells = line.split('\t')
                 markdown_table += "| " + " | ".join(cells) + " |\n"
-            
-            st.code(markdown_table, language="text")
-            if st.button("위 표 형식을 사례 박스에 적용하기"):
+            st.code(markdown_table)
+            if st.button("사례 박스에 적용"):
                 df.at[q_idx, 'case_box'] = markdown_table
-                st.success("사례 박스에 적용되었습니다! '문제' 탭에서 확인하세요.")
+                st.success("적용 완료!")
 
     if st.button("💾 최종 저장하기", use_container_width=True):
         st.session_state.df = df
