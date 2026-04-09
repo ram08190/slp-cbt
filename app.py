@@ -10,14 +10,14 @@ from datetime import datetime
 st.set_page_config(page_title="언어재활사 2급 통합 CBT", layout="wide")
 
 DB_FILE = "quiz_db.csv"
-RESULT_FILE = "results.csv"
+RESULT_FILE = "results.csv"  # 👈 통계 데이터가 저장되는 곳 (이 파일만 있으면 데이터 유지됨)
 HTML_FILE = "자동화.html"
 IMAGE_DIR = "images"
 
 if not os.path.exists(IMAGE_DIR): 
     os.makedirs(IMAGE_DIR)
 
-# 🖼️ 이미지 출력 해결 (Base64 변환 로더)
+# 🖼️ 이미지 출력 해결 (Base64 로더)
 def get_image_data(img_path):
     if not img_path: return ""
     file_name = str(img_path).replace("\\", "/").split('/')[-1].split(':')[0].strip()
@@ -108,19 +108,16 @@ elif mode == "🛠️ 문항 관리":
         with tab2:
             all_df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, int(float(clean_val(all_df.loc[q_idx, 'answer']) or 1)), key=f"ans_{sel_num}")
             for i in range(1, 6):
-                col_t, col_i = st.columns([3, 1])
-                all_df.at[q_idx, f'option{i}'] = col_t.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o{i}_{sel_num}")
-                o_f = col_i.file_uploader(f"사진{i}", type=['png','jpg'], key=f"oi{i}_{sel_num}")
-                if o_f:
-                    with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
-                    all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
+                all_df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o{i}_{sel_num}")
 
         with tab3:
-            st.subheader("💡 엑셀 표 편집 프로세스")
-            ex_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key=f"ex_ar_{sel_num}")
+            st.subheader("💡 엑셀 표 편집 및 정렬")
+            ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key=f"ex_ar_{sel_num}")
+            align_opt = st.selectbox("정렬 설정", ["왼쪽 (| --- |)", "가운데 (| :---: |)"], key=f"align_{sel_num}")
             
-            if st.button("🔄 마크다운 표 코드로 변환하기", key=f"btn_conv_{sel_num}", use_container_width=True):
+            if st.button("🔄 표 코드로 변환", key=f"btn_conv_{sel_num}", use_container_width=True):
                 if ex_in:
+                    sep = ":---:" if "가운데" in align_opt else "---"
                     raw = ex_in.strip()
                     processed_text = ""; in_quotes = False
                     for char in raw:
@@ -129,31 +126,45 @@ elif mode == "🛠️ 문항 관리":
                         else: processed_text += char
                     lines = [l for l in processed_text.split('\n') if l.strip()]
                     md_rows = []
-                    for i, line in enumerate(lines):
-                        cols = [c.strip() for c in line.split('\t')]
+                    for i, l in enumerate(lines):
+                        cols = [c.strip() for c in l.split('\t')]
                         md_rows.append("| " + " | ".join(cols) + " |")
-                        if i == 0: md_rows.append("| " + " | ".join(["---"] * len(cols)) + " |")
+                        if i == 0: md_rows.append("| " + " | ".join([sep] * len(cols)) + " |")
                     st.session_state[f"temp_md_{sel_num}"] = "\n".join(md_rows)
                     st.rerun()
 
             initial_md = st.session_state.get(f"temp_md_{sel_num}", clean_val(all_df.loc[q_idx, 'case_box']))
-            final_md = st.text_area("2. 마크다운 수정 (여기서 고치면 아래 실시간 반영)", value=initial_md, height=250, key=f"edt_box_{sel_num}")
+            final_md = st.text_area("2. 마크다운 수정", value=initial_md, height=200, key=f"edt_box_{sel_num}")
             st.session_state[f"temp_md_{sel_num}"] = final_md
-            
             st.markdown("---")
-            st.write("▼ 실시간 미리보기")
             if final_md: st.markdown(final_md, unsafe_allow_html=True)
             
-            if st.button("🚀 이 표를 사례 박스에 최종 적용", key=f"btn_app_{sel_num}", use_container_width=True):
+            if st.button("🚀 사례 박스 적용", key=f"btn_app_{sel_num}", use_container_width=True):
                 all_df.at[q_idx, 'case_box'] = final_md
-                st.success("사례 박스에 적용되었습니다!")
+                st.success("적용 완료!")
 
     st.divider()
-    # 🌟 고유 key를 부여하여 Duplicate ID 에러 방지
-    if st.button("💾 모든 수정사항 최종 저장하기", key="final_save_button", use_container_width=True):
-        all_df.to_csv(DB_FILE, index=False)
-        st.success("저장 완료!"); time.sleep(1); st.rerun()
+    if st.button("💾 모든 수정사항 최종 저장", key="final_save_btn", use_container_width=True):
+        all_df.to_csv(DB_FILE, index=False); st.success("저장 완료!"); time.sleep(1); st.rerun()
 
+# ---------------------------------------------------------
+# 모드 3: 성적 통계 센터 (데이터 보존 확인)
+# ---------------------------------------------------------
 else:
     st.header("📊 성적 통계 센터")
-    # (통계 로직 생략)
+    if os.path.exists(RESULT_FILE):
+        rdf = pd.read_csv(RESULT_FILE)
+        st.subheader("📈 응시 결과 요약")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("총 응시 횟수", f"{len(rdf)}회")
+        c2.metric("평균 점수", f"{rdf['score'].mean():.1f}점")
+        c3.metric("최고 점수", f"{rdf['score'].max()}점")
+        
+        st.write("---")
+        st.write("▼ 점수 변화 추이")
+        st.line_chart(rdf['score'])
+        
+        st.write("▼ 최근 기록 리스트")
+        st.dataframe(rdf.sort_values(by=rdf.columns[0], ascending=False))
+    else:
+        st.info("아직 저장된 시험 결과(results.csv)가 없습니다. 시험을 마친 후 통계가 생성됩니다.")
