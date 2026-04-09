@@ -112,46 +112,55 @@ elif mode == "🛠️ 문항 관리":
 
         with tab3:
             st.subheader("💡 엑셀 표 편집 및 정렬")
-            ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key=f"ex_ar_{sel_num}")
-            align_opt = st.selectbox("정렬 설정", ["왼쪽 (| --- |)", "가운데 (| :---: |)"], key=f"align_{sel_num}")
             
-            if st.button("🔄 표 코드로 변환", key=f"btn_conv_{sel_num}", use_container_width=True):
-                if ex_in:
-                    sep = ":---:" if "가운데" in align_opt else "---"
-                    raw = ex_in.strip()
-                    processed_text = ""; in_quotes = False
-                    for char in raw:
-                        if char == '"': in_quotes = not in_quotes; continue 
-                        if char == '\n' and in_quotes: processed_text += "<br>" 
-                        else: processed_text += char
-                    lines = [l for l in processed_text.split('\n') if l.strip()]
-                    md_rows = []
-                    for i, l in enumerate(lines):
-                        cols = [c.strip() for c in l.split('\t')]
-                        md_rows.append("| " + " | ".join(cols) + " |")
-                        if i == 0: md_rows.append("| " + " | ".join([sep] * len(cols)) + " |")
-                    
-                    st.session_state[f"temp_md_{sel_num}"] = "\n".join(md_rows)
-                    st.rerun()
+            # 1. 엑셀 데이터 입력 (넣는 즉시 아래 창들이 반응합니다)
+            ex_in = st.text_area("1. 엑셀 데이터를 여기에 붙여넣으세요", height=100, key=f"ex_input_{sel_num}")
+            
+            align_opt = st.selectbox("정렬 설정", ["가운데 (| :---: |)", "왼쪽 (| --- |)"], key=f"align_sel_{sel_num}")
+            
+            # 🌟 실시간 변환 로직: 1번 창에 내용이 있으면 즉시 마크다운 생성
+            md_generated = ""
+            if ex_in:
+                sep = ":---:" if "가운데" in align_opt else "---"
+                raw = ex_in.strip()
+                processed_text = ""; in_quotes = False
+                for char in raw:
+                    if char == '"': in_quotes = not in_quotes; continue 
+                    if char == '\n' and in_quotes: processed_text += "<br>" 
+                    else: processed_text += char
+                
+                lines = [l for l in processed_text.split('\n') if l.strip()]
+                md_rows = []
+                for i, l in enumerate(lines):
+                    cols = [c.strip() for c in l.split('\t')]
+                    md_rows.append("| " + " | ".join(cols) + " |")
+                    if i == 0: md_rows.append("| " + " | ".join([sep] * len(cols)) + " |")
+                md_generated = "\n".join(md_rows)
 
-            # 2. 마크다운 수정 창
-            initial_md = st.session_state.get(f"temp_md_{sel_num}", clean_val(all_df.loc[q_idx, 'case_box']))
-            final_md = st.text_area("2. 마크다운 수정", value=initial_md, height=200, key=f"edt_box_{sel_num}")
-            
-            # [중요] 사용자가 수정창에서 타이핑한 내용을 즉시 세션에 동기화
-            st.session_state[f"temp_md_{sel_num}"] = final_md
+            # 2. 마크다운 수정 창 (1번 창에 데이터가 들어오면 자동으로 채워짐)
+            # value에 md_generated를 직접 넣어 실시간 연동을 강화합니다.
+            final_md = st.text_area(
+                "2. 마크다운 수정 (여기서 글자를 고치면 아래 미리보기가 바뀝니다)", 
+                value=md_generated if ex_in else clean_val(all_df.loc[q_idx, 'case_box']), 
+                height=250, 
+                key=f"edt_area_final_{sel_num}"
+            )
             
             st.markdown("---")
-            if final_md: 
+            st.write("▼ 실시간 미리보기")
+            if final_md:
                 st.markdown(final_md, unsafe_allow_html=True)
             
-            if st.button("🚀 사례 박스 적용", key=f"btn_app_{sel_num}", use_container_width=True):
-                # 🌟 데이터프레임 양쪽에 즉시 강제 반영
-                all_df.at[q_idx, 'case_box'] = final_md
-                st.session_state.df.at[q_idx, 'case_box'] = final_md
-                st.success("✅ 사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인하세요.")
-                time.sleep(0.5)
-                st.rerun() # 변경사항 전파를 위해 리런
+            # 3. 사례 박스 적용 (현재 2번 창에 있는 final_md 내용을 강제로 전송)
+            if st.button("🚀 이 표를 사례 박스에 최종 적용", key=f"btn_final_apply_{sel_num}", use_container_width=True):
+                if final_md:
+                    # 데이터프레임과 세션에 즉시 기록
+                    all_df.at[q_idx, 'case_box'] = final_md
+                    st.session_state.df.at[q_idx, 'case_box'] = final_md
+                    st.success("✅ 사례 박스에 적용되었습니다! '📄 지문/이미지' 탭에서 확인하세요.")
+                    # 0.5초 대기 후 리런하여 모든 탭에 데이터 전파
+                    time.sleep(0.5)
+                    st.rerun()
 
     # 🌟 [매우 중요] 여기서부터는 탭(with tab3) 밖입니다. 
     # 문항 관리 모드(elif mode == "🛠️ 문항 관리")가 끝나기 전 최종 저장 버튼 위치입니다.
