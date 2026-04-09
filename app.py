@@ -23,58 +23,42 @@ def load_data():
         "concept_title", "concept_point", "concept_mindmap", "concept_video"
     ]
     
-    # 2급 기준 설정: 1교시(1~80번), 2교시(81~150번)
-    TOTAL_QUESTIONS = 150
-    SESSION_1_LIMIT = 80
+    # 2급 기준: 1교시 80문항, 2교시 70문항
+    # 내부 관리를 위해 1교시는 101~180, 2교시는 201~270으로 ID 부여
+    s1_ids = [100 + i for i in range(1, 81)]
+    s2_ids = [200 + i for i in range(1, 71)]
+    all_target_ids = s1_ids + s2_ids
 
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE, keep_default_na=False).astype(object)
-        
-        try:
-            existing_ids = df['id'].astype(int).tolist()
-        except:
-            existing_ids = []
-
-        # 1번부터 150번까지 중 없는 번호 생성
-        missing_ids = [i for i in range(1, TOTAL_QUESTIONS + 1) if i not in existing_ids]
+        existing_ids = df['id'].astype(int).tolist()
+        missing_ids = [i for i in all_target_ids if i not in existing_ids]
         
         if missing_ids:
             new_rows = []
             for m_id in missing_ids:
                 row = {col: "" for col in required_cols}
                 row["id"] = m_id
-                # 2급 기준 세션 분할
-                row["session"] = "1" if m_id <= SESSION_1_LIMIT else "2"
+                row["session"] = "1" if m_id < 200 else "2"
                 new_rows.append(row)
             df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
         
         df['id'] = df['id'].astype(int)
         df = df.sort_values(by='id').reset_index(drop=True)
         return df.astype(object)
-    
     else:
-        # 파일이 없을 때 처음부터 150개 생성
         initial_data = []
-        for i in range(1, TOTAL_QUESTIONS + 1):
+        for i in all_target_ids:
             row = {col: "" for col in required_cols}
             row["id"] = i
-            row["session"] = "1" if i <= SESSION_1_LIMIT else "2"
+            row["session"] = "1" if i < 200 else "2"
             initial_data.append(row)
         return pd.DataFrame(initial_data).astype(object)
 
-if 'df' not in st.session_state:
-    st.session_state.df = load_data()
-
-# --- 유틸리티 함수: nan 텍스트 제거 ---
-def clean_val(x):
-    s = str(x).strip()
-    if s.lower() in ['nan', 'none', '']: return ""
-    return s
-
-mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리"])
+# --- 중략 (세션 상태 로드 및 clean_val 함수) ---
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작
+# 모드 1: 시험 시작 (표시 번호 재설정)
 # ---------------------------------------------------------
 if mode == "📝 시험 시작":
     df = st.session_state.df
@@ -82,29 +66,33 @@ if mode == "📝 시험 시작":
 
     for _, row in df.iterrows():
         try:
-            q_id = int(float(row['id']))
+            real_id = int(row['id'])
+            # 🌟 화면에 보일 번호 계산 (101->1, 201->1)
+            display_id = real_id - 100 if real_id < 200 else real_id - 200
+            session_str = str(row['session'])
+            
             q_obj = {
-                "id": q_id,
+                "id": display_id, # 자동화.html에는 다시 1번부터 전달
                 "subject": clean_val(row.get('subject', '')),
                 "text": clean_val(row.get('question', '')),
                 "passage": clean_val(row.get('case_box', '')),
                 "answer": int(float(clean_val(row.get('answer', 1)) or 1)),
                 "img": clean_val(row.get('img', '')),
-                "options": [
-                    {"text": clean_val(row.get(f'option{i}', '')), "img": clean_val(row.get(f'opt_img{i}', ''))} for i in range(1, 6)
-                ]
+                "options": [{"text": clean_val(row.get(f'option{i}', '')), "img": clean_val(row.get(f'opt_img{i}', ''))} for i in range(1, 6)]
             }
-            if str(row.get('session')) == "2": s2_list.append(q_obj)
+            
+            if session_str == "2": s2_list.append(q_obj)
             else: s1_list.append(q_obj)
 
-            f_id = f"Q_{q_id:03d}"
-            concept_db[f_id] = {
+            # 오답 분석용 키는 중복 방지를 위해 실제 ID 사용 (Q_101, Q_201 등)
+            concept_db[f"Q_{real_id:03d}"] = {
                 "title": clean_val(row.get('concept_title', '')),
                 "point": clean_val(row.get('concept_point', '')),
                 "mindmap": clean_val(row.get('concept_mindmap', '')),
                 "video": clean_val(row.get('concept_video', ''))
             }
         except: continue
+    # ... (이하 HTML 주입 로직 동일)
 
     if os.path.exists(HTML_FILE):
         with open(HTML_FILE, "r", encoding="utf-8") as f:
