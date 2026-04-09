@@ -22,17 +22,45 @@ def load_data():
         "img", "opt_img1", "opt_img2", "opt_img3", "opt_img4", "opt_img5",
         "concept_title", "concept_point", "concept_mindmap", "concept_video"
     ]
+    
+    # 2급 기준 설정: 1교시(1~80번), 2교시(81~150번)
+    TOTAL_QUESTIONS = 150
+    SESSION_1_LIMIT = 80
+
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE, keep_default_na=False).astype(object)
-        for col in required_cols:
-            if col not in df.columns: df[col] = ""
-        return df
+        
+        try:
+            existing_ids = df['id'].astype(int).tolist()
+        except:
+            existing_ids = []
+
+        # 1번부터 150번까지 중 없는 번호 생성
+        missing_ids = [i for i in range(1, TOTAL_QUESTIONS + 1) if i not in existing_ids]
+        
+        if missing_ids:
+            new_rows = []
+            for m_id in missing_ids:
+                row = {col: "" for col in required_cols}
+                row["id"] = m_id
+                # 2급 기준 세션 분할
+                row["session"] = "1" if m_id <= SESSION_1_LIMIT else "2"
+                new_rows.append(row)
+            df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+        
+        df['id'] = df['id'].astype(int)
+        df = df.sort_values(by='id').reset_index(drop=True)
+        return df.astype(object)
+    
     else:
-        initial_data = [{"id": i, "session": "1" if i<=70 else "2"} for i in range(1, 141)]
-        df = pd.DataFrame(initial_data).astype(object)
-        for col in required_cols:
-            if col not in df.columns: df[col] = ""
-        return df
+        # 파일이 없을 때 처음부터 150개 생성
+        initial_data = []
+        for i in range(1, TOTAL_QUESTIONS + 1):
+            row = {col: "" for col in required_cols}
+            row["id"] = i
+            row["session"] = "1" if i <= SESSION_1_LIMIT else "2"
+            initial_data.append(row)
+        return pd.DataFrame(initial_data).astype(object)
 
 if 'df' not in st.session_state:
     st.session_state.df = load_data()
