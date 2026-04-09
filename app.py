@@ -110,7 +110,7 @@ elif mode == "🛠️ 문항 관리":
             for i in range(1, 6):
                 all_df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i}", clean_val(all_df.loc[q_idx, f'option{i}']), key=f"o{i}_{sel_num}")
 
-with tab3:
+        with tab3:
             st.subheader("💡 엑셀 표 편집 및 정렬")
             ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key=f"ex_ar_{sel_num}")
             align_opt = st.selectbox("정렬 설정", ["왼쪽 (| --- |)", "가운데 (| :---: |)"], key=f"align_{sel_num}")
