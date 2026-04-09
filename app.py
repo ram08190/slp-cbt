@@ -10,40 +10,47 @@ from datetime import datetime
 st.set_page_config(page_title="언어재활사 2급 통합 CBT", layout="wide")
 
 DB_FILE = "quiz_db.csv"
+RESULT_FILE = "results.csv"
 HTML_FILE = "자동화.html"
-IMAGE_DIR = "images" # 🌟 깃허브에 올리신 폴더 이름
+IMAGE_DIR = "images"
 
 if not os.path.exists(IMAGE_DIR): 
     os.makedirs(IMAGE_DIR)
 
-# 🌟 [이미지 긴급 복구 함수] D드라이브 경로가 적혀있어도 파일명만 추출해서 깃허브 images 폴더에서 찾음
+# 🌟 [강화된 이미지 로더] D드라이브 경로를 무시하고 GitHub images 폴더에서 파일을 찾음
 def get_image_data(img_path):
     if not img_path: return ""
     
-    # 1. 파일명만 추출 (예: 'D:\사진\01.png:C' -> '01.png')
+    # 1. 경로에서 파일명만 추출 (D:\사진\01.png:C -> 01.png)
     file_name = img_path.replace("\\", "/").split('/')[-1].split(':')[0].strip()
     
-    # 2. 깃허브에 올린 images 폴더 내의 실제 경로 생성
+    # 2. GitHub에 올린 images 폴더 내의 실제 경로 생성
     target_path = os.path.join(IMAGE_DIR, file_name)
     
-    if os.path.exists(target_path):
+    if os.path.exists(target_path) and os.path.isfile(target_path):
         try:
             with open(target_path, "rb") as f:
                 encoded = base64.b64encode(f.read()).decode()
-                return f"data:image/png;base64,{encoded}"
+                # 파일 확장자에 따른 MIME 타입 설정
+                ext = target_path.split('.')[-1].lower()
+                mime = "image/png" if ext == "png" else "image/jpeg"
+                return f"data:{mime};base64,{encoded}"
         except:
             return ""
-    return "" # 파일이 images 폴더에 없으면 빈값 반환
+    return ""
 
 def load_data():
     s1_ids = [100 + i for i in range(1, 81)]
     s2_ids = [200 + i for i in range(1, 71)]
     all_target_ids = s1_ids + s2_ids
     if os.path.exists(DB_FILE):
-        df = pd.read_csv(DB_FILE, keep_default_na=False).astype(object)
-        df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
-        df = df[df['id'].isin(all_target_ids)]
-        return df.sort_values('id').reset_index(drop=True).astype(object)
+        try:
+            df = pd.read_csv(DB_FILE, keep_default_na=False).astype(object)
+            df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
+            df = df[df['id'].isin(all_target_ids)]
+            return df.sort_values('id').reset_index(drop=True).astype(object)
+        except:
+            return pd.DataFrame([{"id": i, "session": "1" if i < 200 else "2"} for i in all_target_ids])
     else:
         return pd.DataFrame([{"id": i, "session": "1" if i < 200 else "2"} for i in all_target_ids])
 
@@ -54,22 +61,23 @@ def clean_val(x):
     s = str(x).strip()
     return "" if s.lower() in ['nan', 'none', ''] else s
 
-mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리"])
+mode = st.sidebar.radio("메뉴 선택", ["📝 시험 시작", "🛠️ 문항 관리", "📊 성적 통계 센터"])
 
 # ---------------------------------------------------------
-# 모드 1: 시험 시작 (경로 자동 치환 주입)
+# 모드 1: 시험 시작 (TypeError 및 이미지 엑박 해결)
 # ---------------------------------------------------------
 if mode == "📝 시험 시작":
     df = st.session_state.df
-    s1_list, s2_list = [], []
+    s1_list, s2_list, concept_db = [], [], {}
     for _, row in df.iterrows():
         try:
             real_id = int(row['id'])
-            # 🌟 DB의 D드라이브 경로를 무시하고 깃허브 images 폴더에서 데이터를 가져옴
+            # 🌟 D드라이브 경로가 있어도 파일명만 뽑아 GitHub images 폴더에서 데이터를 가져옴
             img_data = get_image_data(clean_val(row.get('img', '')))
             
             q_obj = {
                 "id": real_id % 100,
+                "subject": clean_val(row.get('subject', '')),
                 "text": clean_val(row.get('question', '')),
                 "passage": clean_val(row.get('case_box', '')),
                 "answer": int(float(clean_val(row.get('answer', 1)) or 1)),
@@ -78,6 +86,7 @@ if mode == "📝 시험 시작":
             }
             if real_id < 200: s1_list.append(q_obj)
             else: s2_list.append(q_obj)
+            concept_db[f"Q_{real_id:03d}"] = {"title": clean_val(row.get('concept_title', '')), "point": clean_val(row.get('concept_point', ''))}
         except: continue
 
     if os.path.exists(HTML_FILE):
@@ -88,23 +97,57 @@ if mode == "📝 시험 시작":
         <script>
             window.QUESTIONS_S1 = {json.dumps(s1_list, ensure_ascii=False)};
             window.QUESTIONS_S2 = {json.dumps(s2_list, ensure_ascii=False)};
-            setTimeout(() => {{ window.render(); }}, 500);
+            window.CONCEPT_DATABASE = {json.dumps(concept_db, ensure_ascii=False)};
+            setTimeout(() => {{ if(window.render) window.render(); }}, 500);
         </script>
         """
         final_html = str(base_html).replace('<script src="questions1.js"></script>', '').replace('<script src="questions2.js"></script>', '').replace('<script src="database.js"></script>', inject_code)
-        st.components.v1.html(final_html, height=1200, scrolling=True, key=f"cbt_final_{time.time()}")
+        
+        # 🌟 TypeError 해결: key에 time.time() 대신 문자열을 사용하거나 int로 변환
+        st.components.v1.html(final_html, height=1200, scrolling=True, key=f"cbt_display_{int(time.time())}")
 
 # ---------------------------------------------------------
-# 모드 2: 문항 관리 (기본 기능만 포함)
+# 모드 2: 문항 관리 (상세 수정 옵션 포함)
 # ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
-    st.header("🛠️ 문항 관리")
+    st.header("🛠️ 문항 관리 시스템")
     all_df = st.session_state.df
-    q_idx = st.selectbox("문항 선택", all_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id'])}번")
+    sel_sess = st.radio("교시 선택", ["1교시", "2교시"], horizontal=True)
+    target_df = all_df[all_df['id'] < 200] if "1교시" in sel_sess else all_df[all_df['id'] >= 200]
+    q_idx = st.selectbox("수정할 문항", target_df.index, format_func=lambda x: f"{int(all_df.loc[x, 'id']) % 100}번 문제")
     
-    # 수정 폼
-    all_df.at[q_idx, 'question'] = st.text_area("문제 지문", value=clean_val(all_df.loc[q_idx, 'question']))
+    df = all_df.copy()
+    tab1, tab2, tab3 = st.tabs(["📄 문제 내용", "🔢 보기 및 이미지", "💡 엑셀 표 도우미"])
+    with tab1:
+        df.at[q_idx, 'subject'] = st.text_input("과목명", clean_val(df.loc[q_idx, 'subject']), key=f"s_{q_idx}")
+        df.at[q_idx, 'question'] = st.text_area("문제 지문", clean_val(df.loc[q_idx, 'question']), key=f"q_{q_idx}")
+        df.at[q_idx, 'case_box'] = st.text_area("사례 박스", clean_val(df.loc[q_idx, 'case_box']), key=f"c_{q_idx}")
+        m_f = st.file_uploader("이미지 업로드", type=['png','jpg','jpeg'], key=f"m_{q_idx}")
+        if m_f:
+            with open(os.path.join(IMAGE_DIR, m_f.name), "wb") as f: f.write(m_f.getbuffer())
+            df.at[q_idx, 'img'] = f"images/{m_f.name}:C"
+    with tab2:
+        df.at[q_idx, 'answer'] = st.number_input("정답", 1, 5, int(float(clean_val(df.loc[q_idx, 'answer']) or 1)))
+        for i in range(1, 6):
+            df.at[q_idx, f'option{i}'] = st.text_input(f"보기 {i}", clean_val(df.loc[q_idx, f'option{i}']), key=f"ot{i}_{q_idx}")
+    with tab3:
+        excel_in = st.text_area("엑셀 붙여넣기")
+        if excel_in:
+            md = "".join(["| " + " | ".join(l.split('\t')) + " |\n" for l in excel_in.strip().split('\n')])
+            st.code(md)
+            if st.button("적용"): df.at[q_idx, 'case_box'] = md; st.success("적용 완료")
     
-    if st.button("💾 저장하기"):
-        all_df.to_csv(DB_FILE, index=False)
-        st.success("저장되었습니다.")
+    if st.button("💾 저장하기", use_container_width=True):
+        st.session_state.df = df
+        df.to_csv(DB_FILE, index=False); st.success("저장 성공!"); st.rerun()
+
+# ---------------------------------------------------------
+# 모드 3: 성적 통계 센터
+# ---------------------------------------------------------
+else:
+    st.header("📊 성적 통계 센터")
+    if os.path.exists(RESULT_FILE):
+        rdf = pd.read_csv(RESULT_FILE)
+        st.metric("총 응시 인원", f"{len(rdf)}명")
+        st.line_chart(rdf['score'])
+    else: st.info("기록이 없습니다.")
