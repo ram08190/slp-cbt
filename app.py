@@ -77,7 +77,7 @@ if mode == "📝 시험 시작":
         st.components.v1.html(base_html.replace('</body>', inject + '</body>'), height=1200, scrolling=True)
 
 # ---------------------------------------------------------
-# 모드 2: 문항 관리 (교시 분리 + 실시간 편집기 + 줄바꿈 대응)
+# 모드 2: 문항 관리 (들여쓰기 및 실시간 편집기 완벽 정렬)
 # ---------------------------------------------------------
 elif mode == "🛠️ 문항 관리":
     st.header("🛠️ 문항 관리 시스템")
@@ -98,7 +98,7 @@ elif mode == "🛠️ 문항 관리":
     if not q_row.empty:
         q_idx = q_row.index[0]
         
-        # 🌟 탭 생성 (들여쓰기 주의!)
+        # 탭 생성
         tab1, tab2, tab3 = st.tabs(["📄 지문/이미지", "🔢 보기/정답", "💡 엑셀 실시간 편집기"])
         
         with tab1:
@@ -120,67 +120,54 @@ elif mode == "🛠️ 문항 관리":
                     with open(os.path.join(IMAGE_DIR, o_f.name), "wb") as f: f.write(o_f.getbuffer())
                     all_df.at[q_idx, f'opt_img{i}'] = f"images/{o_f.name}"
 
-    with tab3:
+        with tab3:
             st.subheader("💡 엑셀 실시간 편집기 (Alt+Enter 대응)")
             st.info("엑셀 셀 내부 줄바꿈을 <br> 태그로 자동 변환합니다.")
             
-            # 1. 엑셀 붙여넣기 창
             ex_in = st.text_area("1. 엑셀 붙여넣기", height=100, key=f"ex_input_{sel_num}")
             
-            # 실시간 변환 로직 (더 직관적이고 오류 없는 버전)
             md_init = ""
             if ex_in:
                 raw = ex_in.strip()
-                
-                # 🌟 Alt+Enter 처리 강화: 따옴표 내부의 줄바꿈을 <br>로 먼저 바꿈
                 processed_text = ""
                 in_quotes = False
                 for char in raw:
                     if char == '"':
                         in_quotes = not in_quotes
-                        continue # 따옴표 자체는 제거
+                        continue 
                     if char == '\n' and in_quotes:
-                        processed_text += "<br>" # 따옴표 안의 줄바꿈은 <br>로
+                        processed_text += "<br>" 
                     else:
                         processed_text += char
                 
-                # 줄 단위로 나누어 마크다운 행 생성
                 lines = [l for l in processed_text.split('\n') if l.strip()]
                 md_rows = []
                 for i, line in enumerate(lines):
                     cols = [c.strip() for c in line.split('\t')]
                     md_rows.append("| " + " | ".join(cols) + " |")
-                    if i == 0: # 헤더 구분선
+                    if i == 0:
                         md_rows.append("| " + " | ".join(["---"] * len(cols)) + " |")
                 md_init = "\n".join(md_rows)
             else:
-                # 붙여넣은게 없으면 기존 사례박스 내용이라도 보여줌
                 md_init = clean_val(all_df.loc[q_idx, 'case_box'])
 
-            # 2. 실시간 수정창 (여기에 내용이 바로 나타나야 합니다!)
-            final_md = st.text_area(
-                "2. 마크다운 수정 (실시간 확인)", 
-                value=md_init, 
-                height=250, 
-                key=f"edt_area_{sel_num}"
-            )
+            final_md = st.text_area("2. 마크다운 수정 (실시간 확인)", value=md_init, height=250, key=f"edt_area_{sel_num}")
             
             st.markdown("---")
             st.write("▼ 실시간 미리보기")
             if final_md:
                 st.markdown(final_md, unsafe_allow_html=True)
-            else:
-                st.caption("내용을 입력하면 여기에 표가 나타납니다.")
             
             if st.button("🚀 이 표를 사례 박스에 적용", use_container_width=True):
                 if final_md:
                     all_df.at[q_idx, 'case_box'] = final_md
-                    st.success("사례 박스에 적용되었습니다! '지문/이미지' 탭에서 확인하세요.")
+                    st.success("사례 박스에 적용되었습니다!")
 
-        st.divider()
-        if st.button("💾 최종 저장하기", use_container_width=True):
-            all_df.to_csv(DB_FILE, index=False)
-            st.success("저장 완료!"); time.sleep(1); st.rerun()
+    # 모든 탭 영역 밖 (모든 수정이 끝난 후 최종 저장)
+    st.divider()
+    if st.button("💾 모든 수정사항 최종 저장하기", use_container_width=True):
+        all_df.to_csv(DB_FILE, index=False)
+        st.success("저장 완료!"); time.sleep(1); st.rerun()
 
 # ---------------------------------------------------------
 # 모드 3: 성적 통계 센터
